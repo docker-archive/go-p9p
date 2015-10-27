@@ -33,7 +33,7 @@ type Session interface {
 	// TODO(stevvooe): The version message affects a lot of protocol behavior.
 	// Consider hiding it behind the implementation, letting the version get
 	// negotiated. The API user should still be able to query it.
-	Version(ctx context.Context, msize int32, version string) (int32, string, error)
+	Version(ctx context.Context, msize uint32, version string) (uint32, string, error)
 }
 
 func Dial(addr string) (Session, error) {

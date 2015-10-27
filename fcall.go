@@ -1,13 +1,6 @@
 package p9pnew
 
-import (
-	"bytes"
-	"encoding/binary"
-	"fmt"
-	"io"
-
-	"encoding"
-)
+import "fmt"
 
 type FcallType uint8
 
@@ -43,46 +36,99 @@ const (
 	Tmax
 )
 
+func (fct FcallType) String() string {
+	switch fct {
+	case Tversion:
+		return "Tversion"
+	case Rversion:
+		return "Rversion"
+	case Tauth:
+		return "Tauth"
+	case Rauth:
+		return "Rauth"
+	case Tattach:
+		return "Tattach"
+	case Rattach:
+		return "Rattach"
+	case Terror:
+		// invalid.
+		return "Terror"
+	case Rerror:
+		return "Rerror"
+	case Tflush:
+		return "Tflush"
+	case Rflush:
+		return "Rflush"
+	case Twalk:
+		return "Twalk"
+	case Rwalk:
+		return "Rwalk"
+	case Topen:
+		return "Topen"
+	case Ropen:
+		return "Ropen"
+	case Tcreate:
+		return "Tcreate"
+	case Rcreate:
+		return "Rcreate"
+	case Tread:
+		return "Tread"
+	case Rread:
+		return "Rread"
+	case Twrite:
+		return "Twrite"
+	case Rwrite:
+		return "Rwrite"
+	case Tclunk:
+		return "Tclunk"
+	case Rclunk:
+		return "Rclunk"
+	case Tremove:
+		return "Tremote"
+	case Rremove:
+		return "Rremove"
+	case Tstat:
+		return "Tstat"
+	case Rstat:
+		return "Rstat"
+	case Twstat:
+		return "Twstat"
+	case Rwstat:
+		return "Rwstat"
+	default:
+		return "Tunknown"
+	}
+}
+
 type Fcall struct {
-	Type    Type
+	Type    FcallType
 	Tag     Tag
 	Message Message
 }
 
-const (
-	fcallHeaderSize = 4 /*size*/ + 1 /*type*/
-)
-
-func (fc *Fcall) Size() int {
-	return fcallHeaderSize + fc.Message.Size()
+func (fc Fcall) String() string {
+	return fmt.Sprintf("%8d %v(%v) %v", size9p(fc), fc.Type, fc.Tag, fc.Message)
 }
 
-func (fc *Fcall) MarshalBinary() ([]byte, error) {
-	mp, err := fc.Message.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
+type Message interface {
+	// Size() uint32
 
-	b := bytes.NewBuffer(make([]byte, 0, fc.Size()))
-	if err := write9p(b, fc.Size(), fc.Tag, mp); err != nil {
-		return nil, err
-	}
+	// NOTE(stevvooe): The binary marshal approach isn't particularly nice to
+	// generating garbage. Consider using an append model, once we have the
+	// messages worked out.
+	// encoding.BinaryMarshaler
+	// encoding.BinaryUnmarshaler
 
-	return b.Bytes(), nil
+	message9p()
 }
 
-func (fc *Fcall) UnmarshalBinary(p []data) error {
-	var (
-		r = bytes.NewReader(p)
-	)
-
-	if err := read9p(r, &fc.Type, &fc.Tag); err != nil {
-		return err
-	}
-
-	switch fc.Type {
+// newMessage returns a new instance of the message based on the Fcall type.
+func newMessage(typ FcallType) (Message, error) {
+	// NOTE(stevvooe): This is a nasty bit of code but makes the transport
+	// fairly simple to implement.
+	switch typ {
 	case Tversion, Rversion:
-		fc.Message = &MessageVersion{}
+		return &MessageVersion{}, nil
 	case Tauth:
 
 	case Rauth:
@@ -96,9 +142,9 @@ func (fc *Fcall) UnmarshalBinary(p []data) error {
 	case Rerror:
 
 	case Tflush:
-
+		return &MessageFlush{}, nil
 	case Rflush:
-
+		return nil, nil // No message body for this response.
 	case Twalk:
 
 	case Rwalk:
@@ -134,16 +180,12 @@ func (fc *Fcall) UnmarshalBinary(p []data) error {
 	case Twstat:
 
 	case Rwstat:
+	default:
+		return nil, fmt.Errorf("unknown message type: %v", typ)
 
 	}
 
-	return fc.Message.UnmarshalBinary(p[len(p)-r.Len():])
-}
-
-type Message interface {
-	Size() int
-	encoding.BinaryMarshaler
-	encoding.BinaryUnmarshaler
+	return nil, fmt.Errorf("unknown message")
 }
 
 // MessageVersion encodes the message body for Tversion and Rversion RPC
@@ -153,109 +195,14 @@ type MessageVersion struct {
 	Version string
 }
 
-func (mv MessageVersion) Size() int {
-	return 4 + 2 + len(mv.Version)
+func (MessageVersion) message9p() {}
+func (mv MessageVersion) String() string {
+	return fmt.Sprintf("msize=%v version=%v", mv.MSize, mv.Version)
 }
 
-func (mv MessageVersion) MarshalBinary() ([]byte, error) {
-	b := bytes.NewBuffer(make([]byte, 0, mv.Size()))
-
-	if err := write9p(b, mv.MSize, mv.Version); err != nil {
-		return nil, err
-	}
-
-	return b.Bytes(), nil
+// MessageFlush handles the content for the Tflush message type.
+type MessageFlush struct {
+	Oldtag Tag
 }
 
-// write9p implements serialization for base types.
-func write9p(w io.Writer, vs ...interface{}) error {
-	for _, v := range vs {
-		switch v := v.(type) {
-		case string:
-			// implement string[s] encoding
-			if err := binary.Write(w, binary.LittleEndian, uint16(len(v))); err != nil {
-				return err
-			}
-
-			_, err := io.WriteString(w, s)
-			if err != nil {
-
-				return err
-			}
-		case *Fcall:
-			if err := write9p(w, v.Size()); err != nil {
-				return err
-			}
-			p, err := v.MarshalBinary()
-			if err != nil {
-				return err
-			}
-
-			n, err := w.Write(p)
-			if err != nil {
-				return err
-			}
-
-			if n != len(p) {
-				return io.ErrShortWrite
-			}
-
-			return nil
-		default:
-			if err := binary.Write(w, binary.LittleEndian, v); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// read9p extracts values from rd and unmarshals them to the targets of vs.
-func read9p(rd io.Reader, vs ...interface{}) error {
-	for _, v := range vs {
-		switch v := v.(type) {
-		case *string:
-			var ll uint16
-
-			// implement string[s] encoding
-			if err := binary.Read(r, binary.LittleEndian, &ll); err != nil {
-				return err
-			}
-
-			b := make([]byte, ll)
-
-			n, err := io.ReadFull(b)
-			if err != nil {
-				return err
-			}
-
-			if n != int(ll) {
-				return fmt.Errorf("unexpected string length")
-			}
-
-			*v = string(b)
-		case *Fcall:
-			var size uint32
-			if err := read9p(buffered, &size); err != nil {
-				return err
-			}
-
-			p := make([]byte, size)
-			n, err := io.ReadFull(p)
-			if err != nil {
-				return err
-			}
-
-			if n != size {
-				return fmt.Errorf("error reading fcall: short read")
-			}
-
-			return v.UnmarshalBinary(p)
-		default:
-			if err := binary.Read(r, binary.LittleEndian, v); err != nil {
-				return err
-			}
-		}
-	}
-}
+func (MessageFlush) message9p() {}

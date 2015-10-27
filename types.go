@@ -1,10 +1,6 @@
 package p9pnew
 
-import (
-	"encoding"
-
-	"time"
-)
+import "time"
 
 const (
 	NOFID = ^Fid(0)
@@ -75,60 +71,3 @@ type Dir struct {
 
 //
 type Tag uint16
-
-type FcallType uint8
-
-const (
-	FcallTypeTversion FcallType = iota + 100
-	FcallTypeRversion
-	FcallTypeTauth
-	FcallTypeRauth
-	FcallTypeTattach
-	FcallTypeRattach
-	FcallTypeTerror
-	FcallTypeRerror
-	FcallTypeTflush
-	FcallTypeRflush
-	FcallTypeTwalk
-	FcallTypeRwalk
-	FcallTypeTopen
-	FcallTypeRopen
-	FcallTypeTcreate
-	FcallTypeRcreate
-	FcallTypeTread
-	FcallTypeRread
-	FcallTypeTwrite
-	FcallTypeRwrite
-	FcallTypeTclunk
-	FcallTypeRclunk
-	FcallTypeTremove
-	FcallTypeRremove
-	FcallTypeTstat
-	FcallTypeRstat
-	FcallTypeTwstat
-	FcallTypeRwstat
-	FcallTypeTmax
-)
-
-type Fcall struct {
-	Type    Type
-	Fid     Fid
-	Tag     Tag
-	Message Message
-}
-
-type Message interface {
-	Size() int
-	encoding.BinaryMarshaler
-	encoding.BinaryUnmarshaler
-}
-
-type MessageVersion struct {
-	MSize   uint32
-	Version string
-}
-
-func (mv MessageVersion) MarshalBinary() ([]byte, error) {
-
-	encoding.BinaryMarshaler
-}

@@ -14,14 +14,15 @@ import (
 type client struct {
 	conn     net.Conn
 	tags     *tagPool
-	requests chan *fcallRequest
+	requests chan fcallRequest
+	closed   chan struct{}
 }
 
 // NewSession returns a session using the connection.
 func NewSession(conn net.Conn) (Session, error) {
 	return &client{
 		conn: conn,
-	}
+	}, nil
 }
 
 var _ Session = &client{}
@@ -70,13 +71,12 @@ func (c *client) WStat(context.Context, Fid, Dir) error {
 	panic("not implemented")
 }
 
-func (c *client) Version(ctx context.Context, msize int32, version string) (int32, string, error) {
+func (c *client) Version(ctx context.Context, msize uint32, version string) (uint32, string, error) {
 	fcall := &Fcall{
-		Type: TVersion,
-		Tag:  tag,
+		Type: Tversion,
 		Message: MessageVersion{
-			MSize:   msize,
-			Version: Version,
+			MSize:   uint32(msize),
+			Version: version,
 		},
 	}
 
@@ -87,10 +87,16 @@ func (c *client) Version(ctx context.Context, msize int32, version string) (int3
 
 	mv, ok := resp.Message.(*MessageVersion)
 	if !ok {
-		return fmt.Errorf("invalid rpc response for version message: %v", resp)
+		return 0, "", fmt.Errorf("invalid rpc response for version message: %v", resp)
 	}
 
 	return mv.MSize, mv.Version, nil
+}
+
+func (c *client) flush(ctx context.Context, tag Tag) error {
+	// TODO(stevvooe): We need to fire and forget flush messages when a call
+	// context gets cancelled.
+	panic("not implemented")
 }
 
 // send dispatches the fcall.
@@ -111,7 +117,7 @@ func (c *client) send(ctx context.Context, fc *Fcall) (*Fcall, error) {
 
 	// wait for the response.
 	select {
-	case <-closed:
+	case <-c.closed:
 		return nil, ErrClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -132,7 +138,7 @@ func newFcallRequest(ctx context.Context, fc *Fcall) fcallRequest {
 		ctx:      ctx,
 		fcall:    fc,
 		response: make(chan *Fcall, 1),
-		err:      make(chan err, 1),
+		err:      make(chan error, 1),
 	}
 }
 
@@ -147,7 +153,7 @@ func (c *client) handle() {
 
 	// loop to read messages off of the connection
 	go func() {
-		r := bufio.NewReader(c.conn)
+		dec := &decoder{bufio.NewReader(c.conn)}
 
 	loop:
 		for {
@@ -160,7 +166,7 @@ func (c *client) handle() {
 			}
 
 			fc := new(Fcall)
-			if err := read9p(r, fc); err != nil {
+			if err := dec.decode(fc); err != nil {
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() || err.Temporary() {
@@ -172,7 +178,7 @@ func (c *client) handle() {
 			}
 
 			select {
-			case <-closed:
+			case <-c.closed:
 				return
 			case responses <- fc:
 			}
@@ -180,14 +186,14 @@ func (c *client) handle() {
 
 	}()
 
-	w := bufio.NewWriter(c.conn)
+	enc := &encoder{bufio.NewWriter(c.conn)}
 
 	for {
 		select {
 		case <-c.closed:
 			return
 		case req := <-c.requests:
-			outstanding[req.fcall.Tag] = req
+			outstanding[req.fcall.Tag] = &req
 
 			// use deadline to set write deadline for this request.
 			deadline, ok := req.ctx.Deadline()
@@ -199,7 +205,7 @@ func (c *client) handle() {
 				log.Println("error setting write deadline: %v", err)
 			}
 
-			if err := write9p(w, req.fcall); err != nil {
+			if err := enc.encode(req.fcall); err != nil {
 				delete(outstanding, req.fcall.Tag)
 				req.err <- err
 			}
