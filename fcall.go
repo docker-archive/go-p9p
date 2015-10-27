@@ -146,9 +146,9 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rflush:
 		return nil, nil // No message body for this response.
 	case Twalk:
-
+		return &MessageTwalk{}, nil
 	case Rwalk:
-
+		return &MessageRwalk{}, nil
 	case Topen:
 
 	case Ropen:
@@ -198,6 +198,72 @@ type MessageVersion struct {
 func (MessageVersion) message9p() {}
 func (mv MessageVersion) String() string {
 	return fmt.Sprintf("msize=%v version=%v", mv.MSize, mv.Version)
+}
+
+type MessageTAuth struct {
+	Afid  Fid
+	Uname string
+	Aname string
+}
+
+type MessageRAuth struct {
+	Qid Qid
+}
+
+type MessageError struct {
+	Ename string
+}
+
+type MessageTattach struct {
+	Fid   Fid
+	Afid  Fid
+	Uname string
+	Aname string
+}
+
+type MessageRattach struct {
+	Qid Qid
+}
+
+type MessageTwalk struct {
+	Fid    Fid
+	Newfid Fid
+	Wname  []string
+}
+
+func (MessageTwalk) message9p() {}
+
+type MessageRwalk struct {
+	Qid []Qid
+}
+
+func (MessageRwalk) message9p() {}
+
+type MessageTopen struct {
+	Fid  Fid
+	Mode uint8
+}
+
+type MessageRopen struct {
+	Qid   Qid
+	Msize uint32
+}
+
+type MessageTcreate struct {
+	Fid  Fid
+	Name string
+	Perm uint32
+	Mode uint8
+}
+
+type MessageTread struct {
+	Fid    Fid
+	Offset uint64
+	Count  uint32
+}
+
+type MessageRread struct {
+	Data []byte
 }
 
 // MessageFlush handles the content for the Tflush message type.

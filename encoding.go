@@ -17,6 +17,23 @@ type encoder struct {
 func (e *encoder) encode(vs ...interface{}) error {
 	for _, v := range vs {
 		switch v := v.(type) {
+		case *[]string:
+			if err := e.encode(*v); err != nil {
+				return err
+			}
+		case []string:
+			if err := e.encode(uint16(len(v))); err != nil {
+				return err
+			}
+
+			var elements []interface{}
+			for _, e := range v {
+				elements = append(elements, e)
+			}
+
+			if err := e.encode(elements...); err != nil {
+				return err
+			}
 		case *string:
 			if err := e.encode(*v); err != nil {
 				return err
@@ -73,7 +90,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 			var ll uint16
 
 			// implement string[s] encoding
-			if err := binary.Read(d.rd, binary.LittleEndian, &ll); err != nil {
+			if err := d.decode(&ll); err != nil {
 				return err
 			}
 
@@ -89,6 +106,22 @@ func (d *decoder) decode(vs ...interface{}) error {
 			}
 
 			*v = string(b)
+		case *[]string:
+			var ll uint16
+
+			if err := d.decode(&ll); err != nil {
+				return err
+			}
+
+			elements := make([]interface{}, int(ll))
+			*v = make([]string, int(ll))
+			for i := range elements {
+				elements[i] = &(*v)[i]
+			}
+
+			if err := d.decode(elements...); err != nil {
+				return err
+			}
 		case *Fcall:
 			var size uint32
 			if err := d.decode(&size, &v.Type, &v.Tag); err != nil {
@@ -139,6 +172,16 @@ func size9p(vs ...interface{}) uint32 {
 			s += uint32(binary.Size(uint16(0)) + len(*v))
 		case string:
 			s += uint32(binary.Size(uint16(0)) + len(v))
+		case *[]string:
+			s += size9p(*v)
+		case []string:
+			s += size9p(uint16(0))
+			elements := make([]interface{}, len(v))
+			for i := range elements {
+				elements[i] = v[i]
+			}
+
+			s += size9p(elements...)
 		case Message:
 			// walk the fields of the message to get the total size. we just
 			// use the field order from the message struct. We may add tag
@@ -150,18 +193,14 @@ func size9p(vs ...interface{}) uint32 {
 				// return 0 and have the rest of the package do the right
 				// thing. For now, we do this, but may want to panic until
 				// things are stable.
-				return 0
+				panic(err)
 			}
 
 			s += size9p(elements...)
 		case Fcall:
-			s += size9p(v.Type, v.Tag, v.Message)
+			s += size9p(uint32(0), v.Type, v.Tag, v.Message)
 		case *Fcall:
-			// Calculates the total size of the fcall, excluding the size
-			// header, which is handled exernally. The result of
-			// (*Fcall).MarshalBinary will have len(p) == the result of this
-			// branch. The value should be
-			s += size9p(v.Type, v.Tag, v.Message)
+			s += size9p(*v)
 		default:
 			s += uint32(binary.Size(v))
 		}
