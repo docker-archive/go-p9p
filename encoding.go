@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"reflect"
 	"time"
 )
@@ -117,7 +116,6 @@ type decoder struct {
 // read9p extracts values from rd and unmarshals them to the targets of vs.
 func (d *decoder) decode(vs ...interface{}) error {
 	for _, v := range vs {
-		before := fmt.Sprintf("%#v", v)
 		switch v := v.(type) {
 		case *string:
 			var ll uint16
@@ -219,7 +217,6 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 		}
-		log.Printf("Decode: %v -> %#v", before, v)
 	}
 
 	return nil

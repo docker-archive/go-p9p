@@ -36,7 +36,7 @@ type Session interface {
 	Version(ctx context.Context, msize uint32, version string) (uint32, string, error)
 }
 
-func Dial(addr string) (Session, error) {
+func Dial(ctx context.Context, addr string) (Session, error) {
 	c, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -45,5 +45,5 @@ func Dial(addr string) (Session, error) {
 	// BUG(stevvooe): Session doesn't actually close connection. Dial might
 	// not be the right interface.
 
-	return NewSession(c)
+	return NewSession(ctx, c)
 }

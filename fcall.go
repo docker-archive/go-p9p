@@ -158,13 +158,13 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rcreate:
 
 	case Tread:
-
+		return &MessageTread{}, nil
 	case Rread:
 		return &MessageRread{}, nil
 	case Twrite:
-
+		return &MessageTwrite{}, nil
 	case Rwrite:
-
+		return &MessageRwrite{}, nil
 	case Tclunk:
 
 	case Rclunk:
@@ -229,9 +229,13 @@ type MessageTattach struct {
 	Aname string
 }
 
+func (MessageTattach) message9p() {}
+
 type MessageRattach struct {
 	Qid Qid
 }
+
+func (MessageRattach) message9p() {}
 
 type MessageTwalk struct {
 	Fid    Fid
