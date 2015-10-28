@@ -4,9 +4,25 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"reflect"
 	"time"
 )
+
+// EncodeDir is just a helper for encoding directories until we export the
+// encoder and decoder.
+func EncodeDir(wr io.Writer, d *Dir) error {
+	enc := &encoder{wr}
+
+	return enc.encode(d)
+}
+
+// DecodeDir is just a helper for decoding directories until we export the
+// encoder and decoder.
+func DecodeDir(rd io.Reader, d *Dir) error {
+	dec := &decoder{rd}
+	return dec.decode(d)
+}
 
 // NOTE(stevvooe): This file covers 9p encoding and decoding (despite just
 // being called encoding).
@@ -58,6 +74,11 @@ func (e *encoder) encode(vs ...interface{}) error {
 				return err
 			}
 		case Message, *Qid, *Dir:
+			// BUG(stevvooe): The encoding for Dir is incorrect. Under certain
+			// cases, we need to include size field and in other cases, such
+			// as Twstat, we need the size twice. See bugs in
+			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
+
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
@@ -129,6 +150,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 
 			n, err := io.ReadFull(d.rd, b)
 			if err != nil {
+				log.Println("readfull failed:", err)
 				return err
 			}
 
