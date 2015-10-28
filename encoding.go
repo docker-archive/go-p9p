@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"reflect"
+	"time"
 )
 
 // NOTE(stevvooe): This file covers 9p encoding and decoding (despite just
@@ -34,6 +36,14 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err := e.encode(elements...); err != nil {
 				return err
 			}
+		case *[]byte:
+			if err := e.encode(uint16(len(*v))); err != nil {
+				return err
+			}
+
+			if err := e.encode(*v); err != nil {
+				return err
+			}
 		case *string:
 			if err := e.encode(*v); err != nil {
 				return err
@@ -48,16 +58,38 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err != nil {
 				return err
 			}
-		case Message:
-			// walk the fields of the message to get the total size. we just
-			// use the field order from the message struct. We may add tag
-			// ignoring if needed.
+		case Message, *Qid, *Dir:
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
 			}
 
 			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case *[]Qid:
+			if err := e.encode(*v); err != nil {
+				return err
+			}
+		case []Qid:
+			if err := e.encode(uint16(len(v))); err != nil {
+				return err
+			}
+
+			elements := make([]interface{}, len(v))
+			for i := range v {
+				elements[i] = &v[i]
+			}
+
+			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case time.Time:
+			if err := e.encode(uint32(v.Unix())); err != nil {
+				return err
+			}
+		case *time.Time:
+			if err := e.encode(*v); err != nil {
 				return err
 			}
 		case Fcall:
@@ -85,6 +117,7 @@ type decoder struct {
 // read9p extracts values from rd and unmarshals them to the targets of vs.
 func (d *decoder) decode(vs ...interface{}) error {
 	for _, v := range vs {
+		before := fmt.Sprintf("%#v", v)
 		switch v := v.(type) {
 		case *string:
 			var ll uint16
@@ -122,6 +155,18 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := d.decode(elements...); err != nil {
 				return err
 			}
+		case *[]byte:
+			var ll uint16
+
+			if err := d.decode(&ll); err != nil {
+				return err
+			}
+
+			*v = make([]byte, int(ll))
+
+			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
+				return err
+			}
 		case *Fcall:
 			var size uint32
 			if err := d.decode(&size, &v.Type, &v.Tag); err != nil {
@@ -137,7 +182,30 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := d.decode(v.Message); err != nil {
 				return err
 			}
-		case Message:
+		case *[]Qid:
+			var ll uint16
+
+			if err := d.decode(&ll); err != nil {
+				return err
+			}
+
+			elements := make([]interface{}, int(ll))
+			*v = make([]Qid, int(ll))
+			for i := range elements {
+				elements[i] = &(*v)[i]
+			}
+
+			if err := d.decode(elements...); err != nil {
+				return err
+			}
+		case *time.Time:
+			var epoch uint32
+			if err := d.decode(&epoch); err != nil {
+				return err
+			}
+
+			*v = time.Unix(int64(epoch), 0).UTC()
+		case Message, *Qid, *Dir:
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
@@ -151,6 +219,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 		}
+		log.Printf("Decode: %v -> %#v", before, v)
 	}
 
 	return nil
@@ -182,7 +251,20 @@ func size9p(vs ...interface{}) uint32 {
 			}
 
 			s += size9p(elements...)
-		case Message:
+		case *[]byte:
+			s += size9p(uint16(0), *v)
+		case *[]Qid:
+			s += size9p(*v)
+		case []Qid:
+			s += size9p(uint16(0))
+			elements := make([]interface{}, len(v))
+			for i := range elements {
+				elements[i] = &v[i]
+			}
+			s += size9p(elements...)
+		case time.Time, *time.Time:
+			s += size9p(uint32(0))
+		case Message, *Qid, *Dir:
 			// walk the fields of the message to get the total size. we just
 			// use the field order from the message struct. We may add tag
 			// ignoring if needed.
@@ -217,6 +299,7 @@ func fields9p(v interface{}) ([]interface{}, error) {
 	rv := reflect.Indirect(reflect.ValueOf(v))
 
 	if rv.Kind() != reflect.Struct {
+		panic("asdf")
 		return nil, fmt.Errorf("cannot extract fields from non-struct: %v", rv)
 	}
 
@@ -229,6 +312,7 @@ func fields9p(v interface{}) ([]interface{}, error) {
 		}
 
 		if !f.CanSet() {
+			panic("asdf")
 			return nil, fmt.Errorf("cannot set %v", f)
 		}
 

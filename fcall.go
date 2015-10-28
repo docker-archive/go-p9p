@@ -142,7 +142,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rerror:
 
 	case Tflush:
-		return &MessageFlush{}, nil
+		return &MessageTflush{}, nil
 	case Rflush:
 		return nil, nil // No message body for this response.
 	case Twalk:
@@ -160,7 +160,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Tread:
 
 	case Rread:
-
+		return &MessageRread{}, nil
 	case Twrite:
 
 	case Rwrite:
@@ -176,7 +176,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Tstat:
 
 	case Rstat:
-
+		return &MessageRstat{}, nil
 	case Twstat:
 
 	case Rwstat:
@@ -196,6 +196,7 @@ type MessageVersion struct {
 }
 
 func (MessageVersion) message9p() {}
+
 func (mv MessageVersion) String() string {
 	return fmt.Sprintf("msize=%v version=%v", mv.MSize, mv.Version)
 }
@@ -210,9 +211,16 @@ type MessageRAuth struct {
 	Qid Qid
 }
 
-type MessageError struct {
+type MessageRerror struct {
 	Ename string
 }
+
+// MessageTflush handles the content for the Tflush message type.
+type MessageTflush struct {
+	Oldtag Tag
+}
+
+func (MessageTflush) message9p() {}
 
 type MessageTattach struct {
 	Fid   Fid
@@ -234,7 +242,7 @@ type MessageTwalk struct {
 func (MessageTwalk) message9p() {}
 
 type MessageRwalk struct {
-	Qid []Qid
+	Qids []Qid
 }
 
 func (MessageRwalk) message9p() {}
@@ -244,10 +252,14 @@ type MessageTopen struct {
 	Mode uint8
 }
 
+func (MessageTopen) message9p() {}
+
 type MessageRopen struct {
 	Qid   Qid
 	Msize uint32
 }
+
+func (MessageRopen) message9p() {}
 
 type MessageTcreate struct {
 	Fid  Fid
@@ -256,19 +268,62 @@ type MessageTcreate struct {
 	Mode uint8
 }
 
+func (MessageTcreate) message9p() {}
+
+type MessageRcreate struct {
+	Qid    Qid
+	IOUnit uint32
+}
+
+func (MessageRcreate) message9p() {}
+
 type MessageTread struct {
 	Fid    Fid
 	Offset uint64
 	Count  uint32
 }
 
+func (MessageTread) message9p() {}
+
 type MessageRread struct {
 	Data []byte
 }
 
-// MessageFlush handles the content for the Tflush message type.
-type MessageFlush struct {
-	Oldtag Tag
+func (MessageRread) message9p() {}
+
+type MessageTwrite struct {
+	Fid    Fid
+	Offset uint64
+	Data   []byte
 }
 
-func (MessageFlush) message9p() {}
+func (MessageTwrite) message9p() {}
+
+type MessageRwrite struct {
+	Count uint32
+}
+
+func (MessageRwrite) message9p() {}
+
+type MessageTclunk struct {
+	Fid Fid
+}
+
+type MessageTremove struct {
+	Fid Fid
+}
+
+type MessageTstat struct {
+	Fid Fid
+}
+
+type MessageRstat struct {
+	Stat Dir
+}
+
+func (MessageRstat) message9p() {}
+
+type MessageTwstat struct {
+	Fid  Fid
+	Stat Dir
+}

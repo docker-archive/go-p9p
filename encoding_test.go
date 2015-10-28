@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestEncodeDecode(t *testing.T) {
@@ -60,15 +61,91 @@ func TestEncodeDecode(t *testing.T) {
 				0x1, 0x0, 0x62, // "b"
 				0x1, 0x0, 0x63}, // "c"
 		},
+		{
+			description: "Rwalk call",
+			target: &Fcall{
+				Type: Rwalk,
+				Tag:  5556,
+				Message: &MessageRwalk{
+					Qids: []Qid{
+						Qid{
+							Type:    QTDIR,
+							Path:    1111,
+							Version: 11112,
+						},
+						Qid{Type: QTFILE,
+							Version: 1112,
+							Path:    11114},
+					},
+				},
+			},
+			marshaled: []byte{
+				0x23, 0x0, 0x0, 0x0,
+				0x6f, 0xb4, 0x15,
+				0x2, 0x0,
+				0x80, 0x68, 0x2b, 0x0, 0x0, 0x57, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+				0x0, 0x58, 0x4, 0x0, 0x0, 0x6a, 0x2b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
+		},
+		{
+			description: "Rread fcall",
+			target: &Fcall{
+				Type: Rread,
+				Tag:  5556,
+				Message: &MessageRread{
+					Data: []byte("a lot of byte data"),
+				},
+			},
+			marshaled: []byte{
+				0x1b, 0x0, 0x0, 0x0,
+				0x75, 0xb4, 0x15,
+				0x12, 0x0,
+				0x61, 0x20, 0x6c, 0x6f, 0x74, 0x20, 0x6f, 0x66, 0x20, 0x62, 0x79, 0x74, 0x65, 0x20, 0x64, 0x61, 0x74, 0x61},
+		},
+		{
+			description: "",
+			target: &Fcall{
+				Type: Rstat,
+				Tag:  5556,
+				Message: &MessageRstat{
+					Stat: Dir{
+						Type: ^uint16(0),
+						Dev:  ^uint32(0),
+						Qid: Qid{
+							Type:    QTDIR,
+							Version: ^uint32(0),
+							Path:    ^uint64(0),
+						},
+						Mode:       DMDIR | DMREAD,
+						AccessTime: time.Date(2006, 01, 02, 03, 04, 05, 0, time.UTC),
+						ModTime:    time.Date(2006, 01, 02, 03, 04, 05, 0, time.UTC),
+						Length:     ^uint64(0),
+						Name:       "somedir",
+						UID:        "uid",
+						GID:        "gid",
+						MUID:       "muid",
+					},
+				},
+			},
+			marshaled: []byte{
+				0x47, 0x0, 0x0, 0x0,
+				0x7d, 0xb4, 0x15,
+				0xff, 0xff, // type
+				0xff, 0xff, 0xff, 0xff, // dev
+				0x80, 0xff, 0xff, 0xff, 0xff, // qid.type, qid.version
+				0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // qid.path
+				0x4, 0x0, 0x0, 0x80, // mode
+				0x25, 0x98, 0xb8, 0x43, // atime
+				0x25, 0x98, 0xb8, 0x43, // mtime
+				0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // length
+				0x7, 0x0, 0x73, 0x6f, 0x6d, 0x65, 0x64, 0x69, 0x72,
+				0x3, 0x0, 0x75, 0x69, 0x64, // uid
+				0x3, 0x0, 0x67, 0x69, 0x64, // gid
+				0x4, 0x0, 0x6d, 0x75, 0x69, 0x64}, // muid
+		},
 	} {
 		t.Logf("target under test: %v", testcase.target)
 		fatalf := func(format string, args ...interface{}) {
 			t.Fatalf(testcase.description+": "+format, args...)
-		}
-
-		// check that size9p is working correctly
-		if int(size9p(testcase.target)) != len(testcase.marshaled) {
-			fatalf("size not correct: %v != %v", int(size9p(testcase.target)), len(testcase.marshaled))
 		}
 
 		t.Logf("expecting message of %v bytes", len(testcase.marshaled))
@@ -83,7 +160,12 @@ func TestEncodeDecode(t *testing.T) {
 		}
 
 		if !bytes.Equal(b.Bytes(), testcase.marshaled) {
-			fatalf("unexpected bytes for fcall: %#v != %#v", b.Bytes(), testcase.marshaled)
+			fatalf("unexpected bytes for fcall: \n%#v != \n%#v", b.Bytes(), testcase.marshaled)
+		}
+
+		// check that size9p is working correctly
+		if int(size9p(testcase.target)) != len(testcase.marshaled) {
+			fatalf("size not correct: %v != %v", int(size9p(testcase.target)), len(testcase.marshaled))
 		}
 
 		var v interface{}
@@ -104,8 +186,9 @@ func TestEncodeDecode(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(v, testcase.target) {
-			fatalf("not equal: %#v != %#v", v, testcase.target)
+			fatalf("not equal: %v != %v", v, testcase.target)
 		}
+
 		t.Logf("%#v", v)
 
 	}
