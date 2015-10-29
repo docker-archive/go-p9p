@@ -106,20 +106,21 @@ type Fcall struct {
 	Message Message
 }
 
-func (fc Fcall) String() string {
+func newFcall(msg Message) *Fcall {
+	return &Fcall{
+		Type:    msg.Type(),
+		Message: msg,
+	}
+}
+
+func (fc *Fcall) String() string {
 	return fmt.Sprintf("%8d %v(%v) %v", size9p(fc), fc.Type, fc.Tag, fc.Message)
 }
 
 type Message interface {
-	// Size() uint32
-
-	// NOTE(stevvooe): The binary marshal approach isn't particularly nice to
-	// generating garbage. Consider using an append model, once we have the
-	// messages worked out.
-	// encoding.BinaryMarshaler
-	// encoding.BinaryUnmarshaler
-
-	message9p()
+	// Type indicates the Fcall type of the message. This must match
+	// Fcall.Type.
+	Type() FcallType
 }
 
 // newMessage returns a new instance of the message based on the Fcall type.
@@ -127,20 +128,19 @@ func newMessage(typ FcallType) (Message, error) {
 	// NOTE(stevvooe): This is a nasty bit of code but makes the transport
 	// fairly simple to implement.
 	switch typ {
-	case Tversion, Rversion:
-		return &MessageVersion{}, nil
+	case Tversion:
+		return &MessageTversion{}, nil
+	case Rversion:
+		return &MessageRversion{}, nil
 	case Tauth:
 
 	case Rauth:
-
 	case Tattach:
-
+		return &MessageTattach{}, nil
 	case Rattach:
-
-	case Terror:
-
+		return &MessageRattach{}, nil
 	case Rerror:
-
+		return &MessageRerror{}, nil
 	case Tflush:
 		return &MessageTflush{}, nil
 	case Rflush:
@@ -150,9 +150,9 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rwalk:
 		return &MessageRwalk{}, nil
 	case Topen:
-
+		return &MessageTopen{}, nil
 	case Ropen:
-
+		return &MessageRopen{}, nil
 	case Tcreate:
 
 	case Rcreate:
@@ -166,9 +166,9 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rwrite:
 		return &MessageRwrite{}, nil
 	case Tclunk:
-
+		return &MessageTclunk{}, nil
 	case Rclunk:
-
+		return nil, nil // no response body
 	case Tremove:
 
 	case Rremove:
@@ -180,34 +180,31 @@ func newMessage(typ FcallType) (Message, error) {
 	case Twstat:
 
 	case Rwstat:
-	default:
-		return nil, fmt.Errorf("unknown message type: %v", typ)
 
 	}
 
-	return nil, fmt.Errorf("unknown message")
+	return nil, fmt.Errorf("unknown message type")
 }
 
 // MessageVersion encodes the message body for Tversion and Rversion RPC
 // calls. The body is identical in both directions.
-type MessageVersion struct {
+type MessageTversion struct {
 	MSize   uint32
 	Version string
 }
 
-func (MessageVersion) message9p() {}
-
-func (mv MessageVersion) String() string {
-	return fmt.Sprintf("msize=%v version=%v", mv.MSize, mv.Version)
+type MessageRversion struct {
+	MSize   uint32
+	Version string
 }
 
-type MessageTAuth struct {
+type MessageTauth struct {
 	Afid  Fid
 	Uname string
 	Aname string
 }
 
-type MessageRAuth struct {
+type MessageRauth struct {
 	Qid Qid
 }
 
@@ -215,12 +212,9 @@ type MessageRerror struct {
 	Ename string
 }
 
-// MessageTflush handles the content for the Tflush message type.
 type MessageTflush struct {
 	Oldtag Tag
 }
-
-func (MessageTflush) message9p() {}
 
 type MessageTattach struct {
 	Fid   Fid
@@ -229,41 +223,29 @@ type MessageTattach struct {
 	Aname string
 }
 
-func (MessageTattach) message9p() {}
-
 type MessageRattach struct {
 	Qid Qid
 }
 
-func (MessageRattach) message9p() {}
-
 type MessageTwalk struct {
 	Fid    Fid
 	Newfid Fid
-	Wname  []string
+	Wnames []string
 }
-
-func (MessageTwalk) message9p() {}
 
 type MessageRwalk struct {
 	Qids []Qid
 }
-
-func (MessageRwalk) message9p() {}
 
 type MessageTopen struct {
 	Fid  Fid
 	Mode uint8
 }
 
-func (MessageTopen) message9p() {}
-
 type MessageRopen struct {
 	Qid   Qid
 	Msize uint32
 }
-
-func (MessageRopen) message9p() {}
 
 type MessageTcreate struct {
 	Fid  Fid
@@ -272,14 +254,10 @@ type MessageTcreate struct {
 	Mode uint8
 }
 
-func (MessageTcreate) message9p() {}
-
 type MessageRcreate struct {
 	Qid    Qid
 	IOUnit uint32
 }
-
-func (MessageRcreate) message9p() {}
 
 type MessageTread struct {
 	Fid    Fid
@@ -287,13 +265,9 @@ type MessageTread struct {
 	Count  uint32
 }
 
-func (MessageTread) message9p() {}
-
 type MessageRread struct {
 	Data []byte
 }
-
-func (MessageRread) message9p() {}
 
 type MessageTwrite struct {
 	Fid    Fid
@@ -301,13 +275,9 @@ type MessageTwrite struct {
 	Data   []byte
 }
 
-func (MessageTwrite) message9p() {}
-
 type MessageRwrite struct {
 	Count uint32
 }
-
-func (MessageRwrite) message9p() {}
 
 type MessageTclunk struct {
 	Fid Fid
@@ -325,9 +295,31 @@ type MessageRstat struct {
 	Stat Dir
 }
 
-func (MessageRstat) message9p() {}
-
 type MessageTwstat struct {
 	Fid  Fid
 	Stat Dir
 }
+
+func (MessageTversion) Type() FcallType { return Tversion }
+func (MessageRversion) Type() FcallType { return Rversion }
+func (MessageTauth) Type() FcallType    { return Tauth }
+func (MessageRauth) Type() FcallType    { return Rauth }
+func (MessageRerror) Type() FcallType   { return Rerror }
+func (MessageTflush) Type() FcallType   { return Tflush }
+func (MessageTattach) Type() FcallType  { return Tattach }
+func (MessageRattach) Type() FcallType  { return Rattach }
+func (MessageTwalk) Type() FcallType    { return Twalk }
+func (MessageRwalk) Type() FcallType    { return Rwalk }
+func (MessageTopen) Type() FcallType    { return Topen }
+func (MessageRopen) Type() FcallType    { return Ropen }
+func (MessageTcreate) Type() FcallType  { return Tcreate }
+func (MessageRcreate) Type() FcallType  { return Rcreate }
+func (MessageTread) Type() FcallType    { return Tread }
+func (MessageRread) Type() FcallType    { return Rread }
+func (MessageTwrite) Type() FcallType   { return Twrite }
+func (MessageRwrite) Type() FcallType   { return Rwrite }
+func (MessageTclunk) Type() FcallType   { return Tclunk }
+func (MessageTremove) Type() FcallType  { return Tremove }
+func (MessageTstat) Type() FcallType    { return Tstat }
+func (MessageRstat) Type() FcallType    { return Rstat }
+func (MessageTwstat) Type() FcallType   { return Twstat }

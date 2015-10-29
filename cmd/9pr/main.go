@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path"
 	"strings"
@@ -17,12 +20,28 @@ import (
 )
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	log.SetFlags(0)
 
 	// addr := os.Args[1]
-
+	ctx := context.Background()
 	// TODO(stevvooe): Use a dialer once we have the server session working
 	// and running.
+
+	session := newSimpleSession()
+
+	sconn, cconn := net.Pipe()
+
+	go p9pnew.Serve(ctx, sconn, session)
+
+	log.Println("new session")
+	csession, err := p9pnew.NewSession(ctx, cconn)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// session, err := p9pnew.Dial(ctx, addr)
 	// if err != nil {
@@ -31,7 +50,7 @@ func main() {
 
 	commander := &fsCommander{
 		ctx:     context.Background(),
-		session: newSimpleSession(),
+		session: csession,
 		pwd:     "/",
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
@@ -55,6 +74,7 @@ func main() {
 	}
 	commander.readline = rl
 
+	log.Println("attach root")
 	// attach root
 	commander.nextfid = 1
 	if _, err := commander.session.Attach(commander.ctx, commander.nextfid, p9pnew.NOFID, "anyone", "/"); err != nil {
@@ -63,6 +83,7 @@ func main() {
 	commander.rootfid = commander.nextfid
 	commander.nextfid++
 
+	log.Println("clone root")
 	// clone the pwd fid so we can clunk it
 	if _, err := commander.session.Walk(commander.ctx, commander.rootfid, commander.nextfid); err != nil {
 		log.Fatalln(err)
@@ -85,7 +106,7 @@ func main() {
 		args := strings.Fields(line)
 
 		name := args[0]
-		var cmd func(args ...string) error
+		var cmd func(ctx context.Context, args ...string) error
 
 		switch name {
 		case "ls":
@@ -97,12 +118,13 @@ func main() {
 		case "cat":
 			cmd = commander.cmdcat
 		default:
-			cmd = func(args ...string) error {
+			cmd = func(ctx context.Context, args ...string) error {
 				return fmt.Errorf("command not implemented")
 			}
 		}
 
-		if err := cmd(args[1:]...); err != nil {
+		ctx, _ = context.WithTimeout(commander.ctx, time.Second)
+		if err := cmd(ctx, args[1:]...); err != nil {
 			log.Printf("👹 %s: %v", name, err)
 		}
 	}
@@ -122,7 +144,7 @@ type fsCommander struct {
 	stderr   io.Writer
 }
 
-func (c *fsCommander) cmdls(args ...string) error {
+func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 	ps := []string{c.pwd}
 	if len(args) > 0 {
 		ps = args
@@ -143,18 +165,18 @@ func (c *fsCommander) cmdls(args ...string) error {
 		targetfid := c.nextfid
 		c.nextfid++
 		components := strings.Split(strings.Trim(p, "/"), "/")
-		if _, err := c.session.Walk(c.ctx, c.rootfid, targetfid, components...); err != nil {
+		if _, err := c.session.Walk(ctx, c.rootfid, targetfid, components...); err != nil {
 			return err
 		}
-		defer c.session.Clunk(c.ctx, targetfid)
+		defer c.session.Clunk(ctx, targetfid)
 
-		if _, err := c.session.Open(c.ctx, targetfid, p9pnew.OREAD); err != nil {
+		if _, _, err := c.session.Open(ctx, targetfid, p9pnew.OREAD); err != nil {
 			return err
 		}
 
 		p := make([]byte, 4<<20)
 
-		n, err := c.session.Read(c.ctx, targetfid, p, 0)
+		n, err := c.session.Read(ctx, targetfid, p, 0)
 		if err != nil {
 			return err
 		}
@@ -183,7 +205,7 @@ func (c *fsCommander) cmdls(args ...string) error {
 	return wr.Flush()
 }
 
-func (c *fsCommander) cmdcd(args ...string) error {
+func (c *fsCommander) cmdcd(ctx context.Context, args ...string) error {
 	var p string
 	switch len(args) {
 	case 0:
@@ -213,7 +235,7 @@ func (c *fsCommander) cmdcd(args ...string) error {
 	return nil
 }
 
-func (c *fsCommander) cmdpwd(args ...string) error {
+func (c *fsCommander) cmdpwd(ctx context.Context, args ...string) error {
 	if len(args) != 0 {
 		return fmt.Errorf("pwd takes no arguments")
 	}
@@ -222,7 +244,7 @@ func (c *fsCommander) cmdpwd(args ...string) error {
 	return nil
 }
 
-func (c *fsCommander) cmdcat(args ...string) error {
+func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 	var p string
 	switch len(args) {
 	case 0:
@@ -245,11 +267,12 @@ func (c *fsCommander) cmdcat(args ...string) error {
 	}
 	defer c.session.Clunk(c.ctx, c.pwdfid)
 
-	if _, err := c.session.Open(c.ctx, targetfid, p9pnew.OREAD); err != nil {
+	_, msize, err := c.session.Open(c.ctx, targetfid, p9pnew.OREAD)
+	if err != nil {
 		return err
 	}
 
-	b := make([]byte, 4<<20)
+	b := make([]byte, msize)
 
 	n, err := c.session.Read(c.ctx, targetfid, b, 0)
 	if err != nil {
@@ -330,9 +353,6 @@ func newSimpleSession() p9pnew.Session {
 	b.add(bc)
 	root.add(a)
 	root.add(b)
-	log.Println(root.children)
-	log.Println(a.children)
-	log.Println(b.children)
 
 	return &simpleSession{
 		root:   root,
@@ -438,15 +458,15 @@ func (s *simpleSession) Write(ctx context.Context, fid p9pnew.Fid, p []byte, off
 	panic("not implemented")
 }
 
-func (s *simpleSession) Open(ctx context.Context, fid p9pnew.Fid, mode int32) (p9pnew.Qid, error) {
+func (s *simpleSession) Open(ctx context.Context, fid p9pnew.Fid, mode uint8) (p9pnew.Qid, uint32, error) {
 	fi, ok := s.fids[fid]
 	if !ok {
-		return p9pnew.Qid{}, p9pnew.ErrUnknownfid
+		return p9pnew.Qid{}, 0, p9pnew.ErrUnknownfid
 	}
 
 	s.opened[fid] = struct{}{}
 
-	return fi.dir.Qid, nil
+	return fi.dir.Qid, 4 << 20, nil
 }
 
 func (s *simpleSession) Create(ctx context.Context, parent p9pnew.Fid, name string, perm uint32, mode uint32) (p9pnew.Qid, error) {

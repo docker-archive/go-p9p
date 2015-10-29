@@ -25,7 +25,7 @@ type Session interface {
 	Walk(ctx context.Context, fid Fid, newfid Fid, names ...string) ([]Qid, error)
 	Read(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
 	Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
-	Open(ctx context.Context, fid Fid, mode int32) (Qid, error)
+	Open(ctx context.Context, fid Fid, mode uint8) (Qid, uint32, error)
 	Create(ctx context.Context, parent Fid, name string, perm uint32, mode uint32) (Qid, error)
 	Stat(context.Context, Fid) (Dir, error)
 	WStat(context.Context, Fid, Dir) error

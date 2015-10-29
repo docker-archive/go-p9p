@@ -344,3 +344,16 @@ func fields9p(v interface{}) ([]interface{}, error) {
 
 	return elements, nil
 }
+
+func pretty9p(w io.Writer, v interface{}) error {
+	switch v := v.(type) {
+	case *Fcall:
+		pretty9p(w, *v)
+	case Fcall:
+		fmt.Fprintf(w, "uint32(%v) %v(%v) ", size9p(v), v.Type, v.Tag)
+		pretty9p(w, v.Message)
+		fmt.Fprintln(w)
+	}
+
+	return nil
+}

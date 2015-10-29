@@ -57,11 +57,11 @@ func (tp *tagPool) Close() error {
 
 // NewtagPool returns a tag pool with the maximum number of outstanding
 // requests.
-func newTagPool(outstanding int) (*tagPool, error) {
+func newTagPool(outstanding int) *tagPool {
 	return &tagPool{
 		maximum:  Tag(outstanding),
 		freelist: make(chan Tag, outstanding),
 		nexttag:  make(chan Tag),
 		closed:   make(chan struct{}),
-	}, nil
+	}
 }
