@@ -114,7 +114,7 @@ func newFcall(msg Message) *Fcall {
 }
 
 func (fc *Fcall) String() string {
-	return fmt.Sprintf("%8d %v(%v) %v", size9p(fc), fc.Type, fc.Tag, fc.Message)
+	return fmt.Sprintf("%8d %v(%v) %v", size9p(fc), fc.Type, fc.Tag, string9p(fc.Message))
 }
 
 type Message interface {
@@ -135,6 +135,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Tauth:
 
 	case Rauth:
+
 	case Tattach:
 		return &MessageTattach{}, nil
 	case Rattach:
@@ -144,7 +145,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Tflush:
 		return &MessageTflush{}, nil
 	case Rflush:
-		return nil, nil // No message body for this response.
+		return &MessageRflush{}, nil // No message body for this response.
 	case Twalk:
 		return &MessageTwalk{}, nil
 	case Rwalk:
@@ -168,7 +169,7 @@ func newMessage(typ FcallType) (Message, error) {
 	case Tclunk:
 		return &MessageTclunk{}, nil
 	case Rclunk:
-		return nil, nil // no response body
+		return &MessageRclunk{}, nil // no response body
 	case Tremove:
 
 	case Rremove:
@@ -215,6 +216,8 @@ type MessageRerror struct {
 type MessageTflush struct {
 	Oldtag Tag
 }
+
+type MessageRflush struct{}
 
 type MessageTattach struct {
 	Fid   Fid
@@ -283,6 +286,8 @@ type MessageTclunk struct {
 	Fid Fid
 }
 
+type MessageRclunk struct{}
+
 type MessageTremove struct {
 	Fid Fid
 }
@@ -306,6 +311,7 @@ func (MessageTauth) Type() FcallType    { return Tauth }
 func (MessageRauth) Type() FcallType    { return Rauth }
 func (MessageRerror) Type() FcallType   { return Rerror }
 func (MessageTflush) Type() FcallType   { return Tflush }
+func (MessageRflush) Type() FcallType   { return Rflush }
 func (MessageTattach) Type() FcallType  { return Tattach }
 func (MessageRattach) Type() FcallType  { return Rattach }
 func (MessageTwalk) Type() FcallType    { return Twalk }
@@ -319,6 +325,7 @@ func (MessageRread) Type() FcallType    { return Rread }
 func (MessageTwrite) Type() FcallType   { return Twrite }
 func (MessageRwrite) Type() FcallType   { return Rwrite }
 func (MessageTclunk) Type() FcallType   { return Tclunk }
+func (MessageRclunk) Type() FcallType   { return Rclunk }
 func (MessageTremove) Type() FcallType  { return Tremove }
 func (MessageTstat) Type() FcallType    { return Tstat }
 func (MessageRstat) Type() FcallType    { return Rstat }

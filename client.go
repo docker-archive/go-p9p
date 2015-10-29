@@ -145,7 +145,7 @@ func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n 
 		return 0, err
 	}
 
-	mrr, ok := resp.Message.(MessageRwrite)
+	mrr, ok := resp.Message.(*MessageRwrite)
 	if !ok {
 		return 0, fmt.Errorf("invalid rpc response for write message: %v", resp)
 	}
@@ -164,7 +164,7 @@ func (c *client) Open(ctx context.Context, fid Fid, mode uint8) (Qid, uint32, er
 		return Qid{}, 0, err
 	}
 
-	respmsg, ok := resp.Message.(MessageRopen)
+	respmsg, ok := resp.Message.(*MessageRopen)
 	if !ok {
 		return Qid{}, 0, fmt.Errorf("invalid rpc response for open message: %v", resp)
 	}

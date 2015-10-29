@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"time"
 
 	"golang.org/x/net/context"
@@ -58,7 +57,6 @@ func newFcallRequest(ctx context.Context, fcall *Fcall) *fcallRequest {
 }
 
 func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
-
 	req := newFcallRequest(ctx, fcall)
 
 	log.Println("dispatch", fcall)
@@ -79,6 +77,16 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case resp := <-req.response:
+		if resp.Type == Rerror {
+			// pack the error into something useful
+			respmesg, ok := resp.Message.(*MessageRerror)
+			if !ok {
+				return nil, fmt.Errorf("invalid error response: %v", resp)
+			}
+
+			return nil, new9pError(respmesg.Ename)
+		}
+
 		return resp, nil
 	}
 }
@@ -153,7 +161,6 @@ func (t *transport) handle() {
 			req.fcall.Tag = tags
 			outstanding[req.fcall.Tag] = req
 
-			pretty9p(os.Stdout, req.fcall)
 			// use deadline to set write deadline for this request.
 			deadline, ok := req.ctx.Deadline()
 			if !ok {

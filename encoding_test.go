@@ -67,7 +67,7 @@ func TestEncodeDecode(t *testing.T) {
 				Message: &MessageTwalk{
 					Fid:    1010,
 					Newfid: 1011,
-					Wname:  []string{"a", "b", "c"},
+					Wnames: []string{"a", "b", "c"},
 				},
 			},
 			marshaled: []byte{

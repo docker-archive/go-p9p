@@ -41,7 +41,7 @@ type error9p struct {
 }
 
 func new9pError(s string) error {
-	return &error9p{Name: s}
+	return error9p{Name: s}
 }
 
 func (e error9p) Error() string {

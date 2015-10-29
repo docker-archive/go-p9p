@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"reflect"
+	"strings"
 	"time"
 )
 
@@ -318,7 +319,6 @@ func fields9p(v interface{}) ([]interface{}, error) {
 	rv := reflect.Indirect(reflect.ValueOf(v))
 
 	if rv.Kind() != reflect.Struct {
-		panic("asdf")
 		return nil, fmt.Errorf("cannot extract fields from non-struct: %v", rv)
 	}
 
@@ -345,15 +345,24 @@ func fields9p(v interface{}) ([]interface{}, error) {
 	return elements, nil
 }
 
-func pretty9p(w io.Writer, v interface{}) error {
-	switch v := v.(type) {
-	case *Fcall:
-		pretty9p(w, *v)
-	case Fcall:
-		fmt.Fprintf(w, "uint32(%v) %v(%v) ", size9p(v), v.Type, v.Tag)
-		pretty9p(w, v.Message)
-		fmt.Fprintln(w)
+func string9p(v interface{}) string {
+	if v == nil {
+		return "nil"
 	}
 
-	return nil
+	rv := reflect.Indirect(reflect.ValueOf(v))
+
+	if rv.Kind() != reflect.Struct {
+		panic("not a struct")
+	}
+
+	var s string
+
+	for i := 0; i < rv.NumField(); i++ {
+		f := rv.Field(i)
+
+		s += fmt.Sprintf(" %v=%v", strings.ToLower(rv.Type().Field(i).Name), f)
+	}
+
+	return s
 }

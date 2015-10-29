@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"time"
 
 	"golang.org/x/net/context"
 )
@@ -74,7 +73,7 @@ func (s *server) run() {
 		}
 		tags[fcall.Tag] = fcall
 
-		resp, err := s.handle(fcall)
+		resp, err := s.handle(s.ctx, fcall)
 		if err != nil {
 			log.Println("server:", err)
 			continue
@@ -91,11 +90,7 @@ func (s *server) run() {
 
 // handle responds to an fcall using the session. An error is only returned if
 // the handler cannot proceed. All session errors are returned as Rerror.
-func (s *server) handle(req *Fcall) (*Fcall, error) {
-	const timeout = 30 * time.Second // TODO(stevvooe): Allow this to be configured.
-	ctx, cancel := context.WithTimeout(s.ctx, timeout)
-	defer cancel()
-
+func (s *server) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 	var resp *Fcall
 	switch req.Type {
 	case Tattach:
@@ -135,9 +130,53 @@ func (s *server) handle(req *Fcall) (*Fcall, error) {
 		resp = newFcall(&MessageRwalk{
 			Qids: qids,
 		})
+	case Topen:
+		reqmsg, ok := req.Message.(*MessageTopen)
+		if !ok {
+			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
+		}
+
+		qid, msize, err := s.session.Open(ctx, reqmsg.Fid, reqmsg.Mode)
+		if err != nil {
+			return nil, err
+		}
+
+		resp = newFcall(&MessageRopen{
+			Qid:   qid,
+			Msize: msize,
+		})
+	case Tread:
+		reqmsg, ok := req.Message.(*MessageTread)
+		if !ok {
+			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
+		}
+
+		p := make([]byte, int(reqmsg.Count))
+		n, err := s.session.Read(ctx, reqmsg.Fid, p, int64(reqmsg.Offset))
+		if err != nil {
+			return nil, err
+		}
+
+		resp = newFcall(&MessageRread{
+			Data: p[:n],
+		})
+	case Tclunk:
+		reqmsg, ok := req.Message.(*MessageTclunk)
+		if !ok {
+			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
+		}
+
+		// TODO(stevvooe): Manage the clunking of file descriptors based on
+		// walk and attach call progression.
+		if err := s.session.Clunk(ctx, reqmsg.Fid); err != nil {
+			return nil, err
+		}
+
+		resp = newFcall(&MessageRclunk{})
 	}
 
 	if resp == nil {
+		log.Println("unknown message type:", req.Type)
 		resp = newFcall(&MessageRerror{
 			Ename: "unknown message type",
 		})
