@@ -26,7 +26,7 @@ func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
 	ch := newChannel(conn, codec9p{}, msize) // sets msize, effectively.
 
 	// negotiate the protocol version
-	smsize, svers, err := version(ctx, ch, msize, vers)
+	smsize, svers, err := ch.version(ctx, msize, vers)
 	if err != nil {
 		return nil, err
 	}
@@ -218,29 +218,4 @@ func (c *client) flush(ctx context.Context, tag Tag) error {
 	// context gets cancelled.
 
 	panic("not implemented")
-}
-
-// version negiotiates the protocol version using channel, blocking until a
-// response is received. This should be called before starting the transport.
-func version(ctx context.Context, ch *channel, msize uint32, version string) (uint32, string, error) {
-	req := newFcall(MessageTversion{
-		MSize:   uint32(msize),
-		Version: version,
-	})
-
-	if err := ch.writeFcall(ctx, req); err != nil {
-		return 0, "", err
-	}
-
-	resp := new(Fcall)
-	if err := ch.readFcall(ctx, resp); err != nil {
-		return 0, "", err
-	}
-
-	mv, ok := resp.Message.(*MessageRversion)
-	if !ok {
-		return 0, "", fmt.Errorf("invalid rpc response for version message: %v", resp)
-	}
-
-	return mv.MSize, mv.Version, nil
 }

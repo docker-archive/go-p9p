@@ -83,7 +83,7 @@ func (e *encoder) encode(vs ...interface{}) error {
 				return err
 			}
 		case *[]byte:
-			if err := e.encode(uint16(len(*v))); err != nil {
+			if err := e.encode(uint32(len(*v))); err != nil {
 				return err
 			}
 
@@ -181,7 +181,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 
 			n, err := io.ReadFull(d.rd, b)
 			if err != nil {
-				log.Println("readfull failed:", err)
+				log.Println("readfull failed:", err, ll, n)
 				return err
 			}
 
@@ -207,7 +207,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 		case *[]byte:
-			var ll uint16
+			var ll uint32
 
 			if err := d.decode(&ll); err != nil {
 				return err
@@ -259,7 +259,32 @@ func (d *decoder) decode(vs ...interface{}) error {
 			}
 
 			*v = time.Unix(int64(epoch), 0).UTC()
-		case Message, *Qid, *Dir:
+		case *Dir:
+			var ll uint16
+
+			if err := d.decode(&ll); err != nil {
+				return err
+			}
+
+			b := make([]byte, ll)
+			// must consume entire dir entry.
+			n, err := io.ReadFull(d.rd, b)
+			if err != nil {
+				log.Println("dir readfull failed:", err, ll, n)
+				return err
+			}
+
+			elements, err := fields9p(v)
+			if err != nil {
+				return err
+			}
+
+			dec := &decoder{bytes.NewReader(b)}
+
+			if err := dec.decode(elements...); err != nil {
+				return err
+			}
+		case Message, *Qid:
 			elements, err := fields9p(v)
 			if err != nil {
 				return err

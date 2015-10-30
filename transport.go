@@ -74,6 +74,8 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 		return nil, ErrClosed
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case err := <-req.err:
+		return nil, err
 	case resp := <-req.response:
 		log.Println("resp", resp)
 		if resp.Type == Rerror {
@@ -92,7 +94,10 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 
 // handle takes messages off the wire and wakes up the waiting tag call.
 func (t *transport) handle() {
-
+	defer func() {
+		log.Println("exited handle loop")
+		close(t.closed)
+	}()
 	// the following variable block are protected components owned by this thread.
 	var (
 		responses = make(chan *Fcall)
@@ -140,6 +145,7 @@ func (t *transport) handle() {
 	}()
 
 	for {
+		log.Println("wait...")
 		select {
 		case req := <-t.requests:
 
@@ -162,6 +168,7 @@ func (t *transport) handle() {
 			// the tag map and dealloc the tag. We may also want to send a
 			// flush for the tag.
 			if err := t.ch.writeFcall(req.ctx, req.fcall); err != nil {
+				log.Println("error writing fcall", err, req.fcall)
 				delete(outstanding, req.fcall.Tag)
 				req.err <- err
 			}

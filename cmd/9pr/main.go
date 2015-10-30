@@ -176,12 +176,17 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 		defer c.session.Clunk(ctx, targetfid)
 
-		_, msize, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+		qid, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
 		if err != nil {
 			return err
 		}
 
-		p := make([]byte, msize)
+		if iounit < 1 {
+			msize, _ := c.session.Version()
+			iounit = msize - 24 // size of message max minus fcall io header (Rread)
+		}
+
+		p := make([]byte, iounit)
 
 		n, err := c.session.Read(ctx, targetfid, p, 0)
 		if err != nil {
@@ -269,19 +274,19 @@ func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 	targetfid := c.nextfid
 	c.nextfid++
 	components := strings.Split(strings.TrimSpace(strings.Trim(p, "/")), "/")
-	if _, err := c.session.Walk(c.ctx, c.rootfid, targetfid, components...); err != nil {
+	if _, err := c.session.Walk(ctx, c.rootfid, targetfid, components...); err != nil {
 		return err
 	}
-	defer c.session.Clunk(c.ctx, c.pwdfid)
+	defer c.session.Clunk(ctx, c.pwdfid)
 
-	_, msize, err := c.session.Open(c.ctx, targetfid, p9pnew.OREAD)
+	_, msize, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
 	if err != nil {
 		return err
 	}
 
 	b := make([]byte, msize)
 
-	n, err := c.session.Read(c.ctx, targetfid, b, 0)
+	n, err := c.session.Read(ctx, targetfid, b, 0)
 	if err != nil {
 		return err
 	}

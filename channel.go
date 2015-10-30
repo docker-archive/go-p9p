@@ -8,8 +8,13 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"time"
 
 	"golang.org/x/net/context"
+)
+
+const (
+	defaultRWTimeout = 1 * time.Second // default read/write timeout if not set in context
 )
 
 // channel provides bidirectional protocol framing for 9p over net.Conn.
@@ -54,6 +59,32 @@ func (ch *channel) setmsize(msize int) {
 	ch.wrbuf = make([]byte, msize)
 }
 
+// version negiotiates the protocol version using channel, blocking until a
+// response is received. The received values can be used to set msize for the
+// channel or assist in client setup.
+func (ch *channel) version(ctx context.Context, msize uint32, version string) (uint32, string, error) {
+	req := newFcall(MessageTversion{
+		MSize:   uint32(msize),
+		Version: version,
+	})
+
+	if err := ch.writeFcall(ctx, req); err != nil {
+		return 0, "", err
+	}
+
+	resp := new(Fcall)
+	if err := ch.readFcall(ctx, resp); err != nil {
+		return 0, "", err
+	}
+
+	mv, ok := resp.Message.(*MessageRversion)
+	if !ok {
+		return 0, "", fmt.Errorf("invalid rpc response for version message: %v", resp)
+	}
+
+	return mv.MSize, mv.Version, nil
+}
+
 // ReadFcall reads the next message from the channel into fcall.
 func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
 	select {
@@ -61,12 +92,14 @@ func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
 		return ErrClosed
 	default:
 	}
-	log.Println("channel: readFcall", fcall)
 
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := ch.conn.SetReadDeadline(deadline); err != nil {
-			log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
-		}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(defaultRWTimeout)
+	}
+
+	if err := ch.conn.SetReadDeadline(deadline); err != nil {
+		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
 	}
 
 	n, err := readmsg(ch.brd, ch.rdbuf)
@@ -82,6 +115,7 @@ func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
 		return fmt.Errorf("message large than buffer:", n)
 	}
 
+	log.Println("channel: readFcall", fcall)
 	return ch.codec.Unmarshal(ch.rdbuf[:n], fcall)
 }
 
@@ -93,10 +127,13 @@ func (ch *channel) writeFcall(ctx context.Context, fcall *Fcall) error {
 	}
 	log.Println("channel: writeFcall", fcall)
 
-	if deadline, ok := ctx.Deadline(); ok {
-		if err := ch.conn.SetWriteDeadline(deadline); err != nil {
-			log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
-		}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		deadline = time.Now().Add(defaultRWTimeout)
+	}
+
+	if err := ch.conn.SetWriteDeadline(deadline); err != nil {
+		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
 	}
 
 	n, err := ch.codec.Marshal(ch.wrbuf, fcall)
@@ -150,6 +187,7 @@ func readmsg(rd io.Reader, p []byte) (n int, err error) {
 		}
 	}
 
+	log.Println("msg", n, msize, mbody, len(p), p)
 	return n, nil
 }
 
