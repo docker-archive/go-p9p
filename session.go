@@ -26,14 +26,14 @@ type Session interface {
 	Read(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
 	Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
 	Open(ctx context.Context, fid Fid, mode uint8) (Qid, uint32, error)
-	Create(ctx context.Context, parent Fid, name string, perm uint32, mode uint32) (Qid, error)
+	Create(ctx context.Context, parent Fid, name string, perm uint32, mode uint32) (Qid, uint32, error)
 	Stat(context.Context, Fid) (Dir, error)
 	WStat(context.Context, Fid, Dir) error
 
-	// TODO(stevvooe): The version message affects a lot of protocol behavior.
-	// Consider hiding it behind the implementation, letting the version get
-	// negotiated. The API user should still be able to query it.
-	Version(ctx context.Context, msize uint32, version string) (uint32, string, error)
+	// Version returns the supported version and msize of the session. This
+	// can be affected by negotiating or the level of support provided by the
+	// session implementation.
+	Version() (msize uint32, version string)
 }
 
 func Dial(ctx context.Context, addr string) (Session, error) {

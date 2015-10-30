@@ -10,6 +10,8 @@ import (
 )
 
 type client struct {
+	version   string
+	msize     uint32
 	ctx       context.Context
 	transport roundTripper
 }
@@ -18,13 +20,40 @@ type client struct {
 // a context for out of bad messages, such as flushes, that may be sent by the
 // session. The session can effectively shutdown with this context.
 func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
+	const msize = 64 << 10
+	const vers = "9P2000"
+
+	ch := newChannel(conn, codec9p{}, msize) // sets msize, effectively.
+
+	// negotiate the protocol version
+	smsize, svers, err := version(ctx, ch, msize, vers)
+	if err != nil {
+		return nil, err
+	}
+
+	if svers != vers {
+		// TODO(stevvooe): A stubborn client indeed!
+		return nil, fmt.Errorf("unsupported server version: %v", vers)
+	}
+
+	if smsize > msize {
+		// upgrade msize if server differs.
+		ch.setmsize(int(smsize))
+	}
+
 	return &client{
+		version:   vers,
+		msize:     msize,
 		ctx:       ctx,
-		transport: newTransport(ctx, conn),
+		transport: newTransport(ctx, ch),
 	}, nil
 }
 
 var _ Session = &client{}
+
+func (c *client) Version() (uint32, string) {
+	return c.msize, c.version
+}
 
 func (c *client) Auth(ctx context.Context, afid Fid, uname, aname string) (Qid, error) {
 	panic("not implemented")
@@ -169,10 +198,10 @@ func (c *client) Open(ctx context.Context, fid Fid, mode uint8) (Qid, uint32, er
 		return Qid{}, 0, fmt.Errorf("invalid rpc response for open message: %v", resp)
 	}
 
-	return respmsg.Qid, respmsg.Msize, nil
+	return respmsg.Qid, respmsg.IOUnit, nil
 }
 
-func (c *client) Create(ctx context.Context, parent Fid, name string, perm uint32, mode uint32) (Qid, error) {
+func (c *client) Create(ctx context.Context, parent Fid, name string, perm uint32, mode uint32) (Qid, uint32, error) {
 	panic("not implemented")
 }
 
@@ -184,16 +213,27 @@ func (c *client) WStat(context.Context, Fid, Dir) error {
 	panic("not implemented")
 }
 
-func (c *client) Version(ctx context.Context, msize uint32, version string) (uint32, string, error) {
-	msg := MessageTversion{
+func (c *client) flush(ctx context.Context, tag Tag) error {
+	// TODO(stevvooe): We need to fire and forget flush messages when a call
+	// context gets cancelled.
+
+	panic("not implemented")
+}
+
+// version negiotiates the protocol version using channel, blocking until a
+// response is received. This should be called before starting the transport.
+func version(ctx context.Context, ch *channel, msize uint32, version string) (uint32, string, error) {
+	req := newFcall(MessageTversion{
 		MSize:   uint32(msize),
 		Version: version,
+	})
+
+	if err := ch.writeFcall(ctx, req); err != nil {
+		return 0, "", err
 	}
 
-	fcall := newFcall(msg)
-
-	resp, err := c.transport.send(ctx, fcall)
-	if err != nil {
+	resp := new(Fcall)
+	if err := ch.readFcall(ctx, resp); err != nil {
 		return 0, "", err
 	}
 
@@ -202,15 +242,5 @@ func (c *client) Version(ctx context.Context, msize uint32, version string) (uin
 		return 0, "", fmt.Errorf("invalid rpc response for version message: %v", resp)
 	}
 
-	// TODO(stevvooe): Use this response to set iounit and version on this
-	// client instance.
-
 	return mv.MSize, mv.Version, nil
-}
-
-func (c *client) flush(ctx context.Context, tag Tag) error {
-	// TODO(stevvooe): We need to fire and forget flush messages when a call
-	// context gets cancelled.
-
-	panic("not implemented")
 }

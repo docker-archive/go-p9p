@@ -1,11 +1,9 @@
 package p9pnew
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"net"
-	"time"
 
 	"golang.org/x/net/context"
 )
@@ -20,17 +18,17 @@ type roundTripper interface {
 
 type transport struct {
 	ctx      context.Context
-	conn     net.Conn
+	ch       *channel
 	requests chan *fcallRequest
 	closed   chan struct{}
 
 	tags uint16
 }
 
-func newTransport(ctx context.Context, conn net.Conn) roundTripper {
+func newTransport(ctx context.Context, ch *channel) roundTripper {
 	t := &transport{
 		ctx:      ctx,
-		conn:     conn,
+		ch:       ch,
 		requests: make(chan *fcallRequest),
 		closed:   make(chan struct{}),
 	}
@@ -77,6 +75,7 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case resp := <-req.response:
+		log.Println("resp", resp)
 		if resp.Type == Rerror {
 			// pack the error into something useful
 			respmesg, ok := resp.Message.(*MessageRerror)
@@ -100,56 +99,42 @@ func (t *transport) handle() {
 		tags      Tag
 		// outstanding provides a map of tags to outstanding requests.
 		outstanding = map[Tag]*fcallRequest{}
-		brd         = bufio.NewReader(t.conn)
-		bwr         = bufio.NewWriter(t.conn)
-		enc         = &encoder{bwr}
-		dec         = &decoder{brd}
 	)
 
 	// loop to read messages off of the connection
 	go func() {
-
+		defer func() {
+			log.Println("exited read loop")
+			close(t.closed)
+		}()
 	loop:
 		for {
-			const pump = time.Second
-
-			// Continuously set the read dead line pump the loop below. We can
-			// probably set a connection dead threshold that can count these.
-			// Usually, this would only matter when there are actually
-			// outstanding requests.
-			deadline, ok := t.ctx.Deadline()
-			if !ok {
-				deadline = time.Now().Add(pump)
-			} else {
-				// if the deadline is before
-				nd := time.Now().Add(pump)
-				if nd.Before(deadline) {
-					deadline = nd
-				}
-			}
-
-			if err := t.conn.SetReadDeadline(deadline); err != nil {
-				log.Printf("error setting read deadline: %v", err)
-			}
-
-			fc := new(Fcall)
-			if err := dec.decode(fc); err != nil {
+			fcall := new(Fcall)
+			if err := t.ch.readFcall(t.ctx, fcall); err != nil {
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() || err.Temporary() {
-						break loop
+						// BUG(stevvooe): There may be partial reads under
+						// timeout errors where this is actually fatal.
+
+						// can only retry if we haven't offset the frame.
+						continue loop
 					}
 				}
 
-				panic(fmt.Sprintf("connection read error: %v", err))
+				log.Println("fatal error reading msg:", err)
+				t.Close()
+				return
 			}
 
 			select {
 			case <-t.ctx.Done():
+				log.Println("ctx done")
 				return
 			case <-t.closed:
+				log.Println("transport closed")
 				return
-			case responses <- fc:
+			case responses <- fcall:
 			}
 		}
 	}()
@@ -157,37 +142,33 @@ func (t *transport) handle() {
 	for {
 		select {
 		case req := <-t.requests:
-			tags++
-			req.fcall.Tag = tags
-			outstanding[req.fcall.Tag] = req
 
-			// use deadline to set write deadline for this request.
-			deadline, ok := req.ctx.Deadline()
-			if !ok {
-				deadline = time.Now().Add(time.Second)
-			}
-
-			if err := t.conn.SetWriteDeadline(deadline); err != nil {
-				log.Printf("error setting write deadline: %v", err)
+			log.Println("send", req.fcall)
+			if req.fcall.Type != Tversion {
+				tags++
+				req.fcall.Tag = tags
+				outstanding[req.fcall.Tag] = req
+			} else {
+				// TODO(stevvooe): Man this protocol is bad. Version messages
+				// have no response tag. Effectively, the client can only have
+				// one version call outstanding at a time. We have to create
+				// an entire special code path to handle it. The client
+				// shouldn't proceed until the version reply is completed.
+				req.fcall.Tag = NOTAG
 			}
 
 			// TODO(stevvooe): Consider the case of requests that never
 			// receive a response. We need to remove the fcall context from
 			// the tag map and dealloc the tag. We may also want to send a
 			// flush for the tag.
-
-			log.Println("send", req.fcall)
-			if err := enc.encode(req.fcall); err != nil {
-				delete(outstanding, req.fcall.Tag)
-				req.err <- err
-			}
-			if err := bwr.Flush(); err != nil {
+			if err := t.ch.writeFcall(req.ctx, req.fcall); err != nil {
 				delete(outstanding, req.fcall.Tag)
 				req.err <- err
 			}
 
 			log.Println("sent", req.fcall)
 		case b := <-responses:
+			log.Println("recv", b)
 			req, ok := outstanding[b.Tag]
 			if !ok {
 				panic("unknown tag received")

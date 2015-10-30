@@ -51,6 +51,11 @@ func (s *server) run() {
 
 		log.Println("server:", "wait")
 		fcall := new(Fcall)
+
+		// BUG(stevvooe): The decoder is not reliably consuming all of the
+		// bytes of the wire. Needs to be setup to consume all bytes indicated
+		// in the size portion. Should use msize from the version negotiation.
+
 		if err := dec.decode(fcall); err != nil {
 			log.Println("server decoding fcall:", err)
 			continue
@@ -136,14 +141,14 @@ func (s *server) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
 
-		qid, msize, err := s.session.Open(ctx, reqmsg.Fid, reqmsg.Mode)
+		qid, iounit, err := s.session.Open(ctx, reqmsg.Fid, reqmsg.Mode)
 		if err != nil {
 			return nil, err
 		}
 
 		resp = newFcall(&MessageRopen{
-			Qid:   qid,
-			Msize: msize,
+			Qid:    qid,
+			IOUnit: iounit,
 		})
 	case Tread:
 		reqmsg, ok := req.Message.(*MessageTread)

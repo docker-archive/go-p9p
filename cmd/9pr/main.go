@@ -74,6 +74,12 @@ func main() {
 	}
 	commander.readline = rl
 
+	msize, version := commander.session.Version()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	log.Println("9p version", version, msize)
+
 	log.Println("attach root")
 	// attach root
 	commander.nextfid = 1
@@ -123,7 +129,7 @@ func main() {
 			}
 		}
 
-		ctx, _ = context.WithTimeout(commander.ctx, time.Second)
+		ctx, _ = context.WithTimeout(commander.ctx, 5*time.Second)
 		if err := cmd(ctx, args[1:]...); err != nil {
 			log.Printf("👹 %s: %v", name, err)
 		}
@@ -170,11 +176,12 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 		defer c.session.Clunk(ctx, targetfid)
 
-		if _, _, err := c.session.Open(ctx, targetfid, p9pnew.OREAD); err != nil {
+		_, msize, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+		if err != nil {
 			return err
 		}
 
-		p := make([]byte, 4<<20)
+		p := make([]byte, msize)
 
 		n, err := c.session.Read(ctx, targetfid, p, 0)
 		if err != nil {
@@ -469,7 +476,7 @@ func (s *simpleSession) Open(ctx context.Context, fid p9pnew.Fid, mode uint8) (p
 	return fi.dir.Qid, 4 << 20, nil
 }
 
-func (s *simpleSession) Create(ctx context.Context, parent p9pnew.Fid, name string, perm uint32, mode uint32) (p9pnew.Qid, error) {
+func (s *simpleSession) Create(ctx context.Context, parent p9pnew.Fid, name string, perm uint32, mode uint32) (p9pnew.Qid, uint32, error) {
 	panic("not implemented")
 }
 
@@ -481,9 +488,6 @@ func (s *simpleSession) WStat(context.Context, p9pnew.Fid, p9pnew.Dir) error {
 	panic("not implemented")
 }
 
-// TODO(stevvooe): The version message affects a lot of protocol behavior.
-// Consider hiding it behind the implementation, letting the version get
-// negotiated. The API user should still be able to query it.
-func (s *simpleSession) Version(ctx context.Context, msize uint32, version string) (uint32, string, error) {
-	return 4096, "9P2000", nil
+func (s *simpleSession) Version() (uint32, string) {
+	return 64 << 10, "9P2000"
 }

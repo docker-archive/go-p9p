@@ -1,6 +1,9 @@
 package p9pnew
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 const (
 	NOFID = ^Fid(0)
@@ -14,20 +17,35 @@ const (
 	DMMOUNT  = 0x10000000 // mode bit for mounted channel
 	DMAUTH   = 0x08000000 // mode bit for authentication file
 	DMTMP    = 0x04000000 // mode bit for non-backed-up files
-	DMREAD   = 0x4        // mode bit for read permission
-	DMWRITE  = 0x2        // mode bit for write permission
-	DMEXEC   = 0x1        // mode bit for execute permission
+
+	// 9p2000.u extensions
+	DMSYMLINK   = 0x02000000
+	DMDEVICE    = 0x00800000
+	DMNAMEDPIPE = 0x00200000
+	DMSOCKET    = 0x00100000
+	DMSETUID    = 0x00080000
+	DMSETGID    = 0x00040000
+
+	DMREAD  = 0x4 // mode bit for read permission
+	DMWRITE = 0x2 // mode bit for write permission
+	DMEXEC  = 0x1 // mode bit for execute permission
 )
 
 const (
-	OREAD   = 0      // open for read
-	OWRITE  = 1      // write
-	ORDWR   = 2      // read and write
-	OEXEC   = 3      // execute, == read but check execute permission
-	OTRUNC  = 16     // or'ed in (except for exec), truncate file first
-	OCEXEC  = 32     // or'ed in, close on exec
-	ORCLOSE = 64     // or'ed in, remove on close
-	OEXCL   = 0x1000 // or'ed in, exclusive use (create only)
+	OREAD  = 0x00 // open for read
+	OWRITE = 0x01 // write
+	ORDWR  = 0x02 // read and write
+	OEXEC  = 0x03 // execute, == read but check execute permission
+
+	// PROPOSAL(stevvooe): Possible protocal extension to allow the create of
+	// symlinks. Initially, the link is created with no value. Read and write
+	// to read and set the link value.
+	OSYMLINK = 0x04
+
+	// or'd in
+	OTRUNC  = 0x10 // or'ed in (except for exec), truncate file first
+	OCEXEC  = 0x20 // or'ed in, close on exec
+	ORCLOSE = 0x40 // or'ed in, remove on close
 )
 
 type QType uint8
@@ -42,28 +60,58 @@ const (
 	QTFILE   QType = 0x00 // plain file
 )
 
+func (qt QType) String() string {
+	switch qt {
+	case QTDIR:
+		return "dir"
+	case QTAPPEND:
+		return "append"
+	case QTEXCL:
+		return "excl"
+	case QTMOUNT:
+		return "mount"
+	case QTAUTH:
+		return "auth"
+	case QTTMP:
+		return "tmp"
+	case QTFILE:
+		return "file"
+	}
+
+	return "unknown"
+}
+
 type Fid uint32
 
 type Qid struct {
-	Type    QType
+	Type    QType `9p:type,1`
 	Version uint32
 	Path    uint64
 }
 
+func (qid Qid) String() string {
+	return fmt.Sprintf("Qid(%v, version=%x, path=%x)",
+		qid.Type, qid.Version, qid.Path)
+}
+
 type Dir struct {
-	Type       uint16
-	Dev        uint32
-	Qid        Qid
-	Mode       uint32
+	Type uint16
+	Dev  uint32
+	Qid  Qid
+	Mode uint32
+
+	// BUG(stevvooe): The Year 2038 is coming soon. 9p wire protocol has these
+	// as 4 byte epoch times. Some possibilities include time dilation fields
+	// or atemporal files. We can also just not use them and set them to zero.
+
 	AccessTime time.Time
 	ModTime    time.Time
-	Length     uint64
-	Name       string
-	UID        string
-	GID        string
-	MUID       string
 
-	// TODO(stevvooe): 9p2000.u/L should go here.
+	Length uint64
+	Name   string
+	UID    string
+	GID    string
+	MUID   string
 }
 
 //

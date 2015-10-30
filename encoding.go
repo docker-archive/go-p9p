@@ -1,6 +1,7 @@
 package p9pnew
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -23,6 +24,35 @@ func EncodeDir(wr io.Writer, d *Dir) error {
 func DecodeDir(rd io.Reader, d *Dir) error {
 	dec := &decoder{rd}
 	return dec.decode(d)
+}
+
+type Codec interface {
+	Unmarshal(data []byte, v interface{}) error
+	Marshal(data []byte, v interface{}) (n int, err error)
+}
+
+type codec9p struct{}
+
+func (c codec9p) Unmarshal(data []byte, v interface{}) error {
+	dec := &decoder{bytes.NewReader(data)}
+	return dec.decode(v)
+}
+
+func (c codec9p) Marshal(data []byte, v interface{}) (n int, err error) {
+	n = int(size9p(v))
+
+	buf := bytes.NewBuffer(data[:0])
+	enc := &encoder{buf}
+
+	if err := enc.encode(v); err != nil {
+		return buf.Len(), nil
+	}
+
+	if len(data) < buf.Len() {
+		return len(data), io.ErrShortBuffer
+	}
+
+	return buf.Len(), nil
 }
 
 // NOTE(stevvooe): This file covers 9p encoding and decoding (despite just
@@ -118,7 +148,7 @@ func (e *encoder) encode(vs ...interface{}) error {
 				return err
 			}
 		case *Fcall:
-			if err := e.encode(size9p(v), v.Type, v.Tag, v.Message); err != nil {
+			if err := e.encode(v.Type, v.Tag, v.Message); err != nil {
 				return err
 			}
 		default:
@@ -189,16 +219,19 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 		case *Fcall:
-			var size uint32
-			if err := d.decode(&size, &v.Type, &v.Tag); err != nil {
+			if err := d.decode(&v.Type, &v.Tag); err != nil {
 				return err
 			}
 
 			var err error
 			v.Message, err = newMessage(v.Type)
 			if err != nil {
+				log.Printf("unknown message type %#v", v.Type)
 				return err
 			}
+
+			// take the address of v.Message from the struct and encode into
+			// that.
 
 			if err := d.decode(v.Message); err != nil {
 				return err
@@ -300,7 +333,7 @@ func size9p(vs ...interface{}) uint32 {
 
 			s += size9p(elements...)
 		case Fcall:
-			s += size9p(uint32(0), v.Type, v.Tag, v.Message)
+			s += size9p(v.Type, v.Tag, v.Message)
 		case *Fcall:
 			s += size9p(*v)
 		default:
@@ -328,11 +361,6 @@ func fields9p(v interface{}) ([]interface{}, error) {
 
 		if !f.CanInterface() {
 			return nil, fmt.Errorf("can't interface: %v", f)
-		}
-
-		if !f.CanSet() {
-			panic("asdf")
-			return nil, fmt.Errorf("cannot set %v", f)
 		}
 
 		if f.CanAddr() {

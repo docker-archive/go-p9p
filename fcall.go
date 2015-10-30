@@ -109,6 +109,7 @@ type Fcall struct {
 func newFcall(msg Message) *Fcall {
 	return &Fcall{
 		Type:    msg.Type(),
+		Tag:     NOTAG,
 		Message: msg,
 	}
 }
@@ -246,8 +247,8 @@ type MessageTopen struct {
 }
 
 type MessageRopen struct {
-	Qid   Qid
-	Msize uint32
+	Qid    Qid
+	IOUnit uint32
 }
 
 type MessageTcreate struct {
