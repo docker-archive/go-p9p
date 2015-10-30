@@ -305,12 +305,17 @@ func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 	}
 	defer c.session.Clunk(ctx, c.pwdfid)
 
-	_, msize, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+	_, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
 	if err != nil {
 		return err
 	}
 
-	b := make([]byte, msize)
+	if iounit < 1 {
+		msize, _ := c.session.Version()
+		iounit = msize - 24 // size of message max minus fcall io header (Rread)
+	}
+
+	b := make([]byte, iounit)
 
 	n, err := c.session.Read(ctx, targetfid, b, 0)
 	if err != nil {
