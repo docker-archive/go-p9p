@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -19,34 +20,31 @@ import (
 	"golang.org/x/net/context"
 )
 
+var addr string
+
+func init() {
+	flag.StringVar(&addr, "addr", ":5640", "addr of 9p service")
+}
+
 func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 
-	log.SetFlags(0)
-
-	// addr := os.Args[1]
 	ctx := context.Background()
-	// TODO(stevvooe): Use a dialer once we have the server session working
-	// and running.
+	log.SetFlags(0)
+	flag.Parse()
 
-	session := newSimpleSession()
+	log.Println("dialing", addr)
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	sconn, cconn := net.Pipe()
-
-	go p9pnew.Serve(ctx, sconn, session)
-
-	log.Println("new session")
-	csession, err := p9pnew.NewSession(ctx, cconn)
+	csession, err := p9pnew.NewSession(ctx, conn)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	// session, err := p9pnew.Dial(ctx, addr)
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
 
 	commander := &fsCommander{
 		ctx:     context.Background(),
@@ -80,7 +78,6 @@ func main() {
 	}
 	log.Println("9p version", version, msize)
 
-	log.Println("attach root")
 	// attach root
 	commander.nextfid = 1
 	if _, err := commander.session.Attach(commander.ctx, commander.nextfid, p9pnew.NOFID, "anyone", "/"); err != nil {
@@ -89,7 +86,6 @@ func main() {
 	commander.rootfid = commander.nextfid
 	commander.nextfid++
 
-	log.Println("clone root")
 	// clone the pwd fid so we can clunk it
 	if _, err := commander.session.Walk(commander.ctx, commander.rootfid, commander.nextfid); err != nil {
 		log.Fatalln(err)
@@ -328,201 +324,4 @@ func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 	os.Stdout.Write([]byte("\n"))
 
 	return nil
-}
-
-type simpleSession struct {
-	root   *fidinfo
-	fids   map[p9pnew.Fid]*fidinfo
-	opened map[p9pnew.Fid]struct{}
-}
-
-type fidinfo struct {
-	name string
-	dir  p9pnew.Dir
-
-	children map[string]*fidinfo
-	data     []byte
-}
-
-func (fi *fidinfo) add(child *fidinfo) {
-	log.Println("add", fi.name, child.name)
-	fi.children[child.name] = child
-}
-
-var _ p9pnew.Session = &simpleSession{}
-
-var pathnum uint64
-
-func mkdir(name string) *fidinfo {
-	log.Println("mkdir", name)
-	pathnum++
-	return &fidinfo{
-		name: name,
-		dir: p9pnew.Dir{
-			Name:       name,
-			Qid:        p9pnew.Qid{Type: p9pnew.QTDIR, Path: pathnum, Version: 1},
-			Mode:       p9pnew.DMDIR | p9pnew.DMREAD | p9pnew.DMEXEC,
-			ModTime:    time.Now().UTC(),
-			AccessTime: time.Now().UTC(),
-		},
-		children: make(map[string]*fidinfo),
-	}
-}
-
-func mkfile(name string, p []byte) *fidinfo {
-	log.Println("mkfile", name)
-	pathnum++
-	return &fidinfo{
-		name: name,
-		dir: p9pnew.Dir{
-			Name:       name,
-			Qid:        p9pnew.Qid{Type: p9pnew.QTFILE, Path: pathnum, Version: 1},
-			Mode:       p9pnew.DMREAD,
-			ModTime:    time.Now().UTC(),
-			AccessTime: time.Now().UTC(),
-		},
-		data: p,
-	}
-}
-
-func newSimpleSession() p9pnew.Session {
-	root := mkdir("/")
-	a := mkdir("a")
-	ab := mkfile("b", []byte("the b child"))
-	a.add(ab)
-	b := mkdir("b")
-	bc := mkfile("c", []byte("the c child"))
-	b.add(bc)
-	root.add(a)
-	root.add(b)
-
-	return &simpleSession{
-		root:   root,
-		fids:   make(map[p9pnew.Fid]*fidinfo),
-		opened: make(map[p9pnew.Fid]struct{}),
-	}
-}
-
-func (s *simpleSession) Auth(ctx context.Context, afid p9pnew.Fid, uname, aname string) (p9pnew.Qid, error) {
-	panic("not implemented")
-}
-
-func (s *simpleSession) Attach(ctx context.Context, fid, afid p9pnew.Fid, uname, aname string) (p9pnew.Qid, error) {
-	log.Println("attach", fid, aname)
-	if aname != "/" {
-		return p9pnew.Qid{}, p9pnew.ErrBadattach
-	}
-
-	s.fids[fid] = s.root
-	log.Println("root", s.root, fid)
-
-	return s.fids[fid].dir.Qid, nil
-}
-
-func (s *simpleSession) Clunk(ctx context.Context, fid p9pnew.Fid) error {
-	log.Println("clunk", fid)
-	delete(s.fids, fid)
-	return nil
-}
-
-func (s *simpleSession) Remove(ctx context.Context, fid p9pnew.Fid) error {
-	panic("not implemented")
-}
-
-func (s *simpleSession) Walk(ctx context.Context, fid, newfid p9pnew.Fid, names ...string) ([]p9pnew.Qid, error) {
-	log.Println("walk", fid, newfid, names)
-	fi, ok := s.fids[fid]
-	if !ok {
-		log.Println("source fid not found")
-		return nil, p9pnew.ErrUnknownfid
-	}
-
-	if len(names) == 0 {
-		// clone the fid
-		s.fids[newfid] = fi
-		return []p9pnew.Qid{fi.dir.Qid}, nil
-	}
-
-	var qids []p9pnew.Qid
-	for i, name := range names {
-		var chfi *fidinfo
-
-		if name == "" || name == "." {
-			chfi = fi
-		} else {
-			var ok bool
-			chfi, ok = fi.children[name]
-			if !ok {
-				if i == 0 {
-					return nil, p9pnew.ErrUnknownfid
-				}
-
-				return qids, nil
-			}
-		}
-
-		qids = append(qids, chfi.dir.Qid)
-		fi = chfi
-	}
-
-	// assign the fid
-	s.fids[newfid] = fi
-
-	return qids, nil
-}
-
-func (s *simpleSession) Read(ctx context.Context, fid p9pnew.Fid, p []byte, offset int64) (n int, err error) {
-	fi, ok := s.fids[fid]
-	if !ok {
-		return 0, p9pnew.ErrUnknownfid
-	}
-
-	if _, ok := s.opened[fid]; !ok {
-		return 0, p9pnew.ErrClosed
-	}
-
-	if fi.dir.Qid.Type == p9pnew.QTDIR {
-		var b bytes.Buffer
-		for _, child := range fi.children {
-			if err := p9pnew.EncodeDir(&b, &child.dir); err != nil {
-				return 0, err
-			}
-		}
-		n := copy(p, b.Bytes()) // just truncate for now.
-
-		return n, nil
-	}
-
-	return copy(p, fi.data[int(offset):]), nil
-}
-
-func (s *simpleSession) Write(ctx context.Context, fid p9pnew.Fid, p []byte, offset int64) (n int, err error) {
-	panic("not implemented")
-}
-
-func (s *simpleSession) Open(ctx context.Context, fid p9pnew.Fid, mode uint8) (p9pnew.Qid, uint32, error) {
-	fi, ok := s.fids[fid]
-	if !ok {
-		return p9pnew.Qid{}, 0, p9pnew.ErrUnknownfid
-	}
-
-	s.opened[fid] = struct{}{}
-
-	return fi.dir.Qid, 4 << 20, nil
-}
-
-func (s *simpleSession) Create(ctx context.Context, parent p9pnew.Fid, name string, perm uint32, mode uint32) (p9pnew.Qid, uint32, error) {
-	panic("not implemented")
-}
-
-func (s *simpleSession) Stat(context.Context, p9pnew.Fid) (p9pnew.Dir, error) {
-	panic("not implemented")
-}
-
-func (s *simpleSession) WStat(context.Context, p9pnew.Fid, p9pnew.Dir) error {
-	panic("not implemented")
-}
-
-func (s *simpleSession) Version() (uint32, string) {
-	return 64 << 10, "9P2000"
 }
