@@ -107,15 +107,22 @@ type Fcall struct {
 }
 
 func newFcall(msg Message) *Fcall {
+	var tag Tag
+
+	switch msg.Type() {
+	case Tversion, Rversion:
+		tag = NOTAG
+	}
+
 	return &Fcall{
 		Type:    msg.Type(),
-		Tag:     NOTAG,
+		Tag:     tag,
 		Message: msg,
 	}
 }
 
 func (fc *Fcall) String() string {
-	return fmt.Sprintf("%8d %v(%v) %v", size9p(fc), fc.Type, fc.Tag, string9p(fc.Message))
+	return fmt.Sprintf("%v(%v) %v", fc.Type, fc.Tag, string9p(fc.Message))
 }
 
 type Message interface {

@@ -90,7 +90,7 @@ type Qid struct {
 }
 
 func (qid Qid) String() string {
-	return fmt.Sprintf("Qid(%v, version=%x, path=%x)",
+	return fmt.Sprintf("qid(%v, v=%x, p=%x)",
 		qid.Type, qid.Version, qid.Path)
 }
 
@@ -112,6 +112,11 @@ type Dir struct {
 	UID    string
 	GID    string
 	MUID   string
+}
+
+func (d Dir) String() string {
+	return fmt.Sprintf("dir(%v mode=%v atime=%v mtime=%v length=%v name=%v uid=%v gid=%v muid=%v)",
+		d.Qid, d.Mode, d.AccessTime, d.ModTime, d.Length, d.Name, d.UID, d.GID, d.MUID)
 }
 
 //

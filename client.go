@@ -205,8 +205,20 @@ func (c *client) Create(ctx context.Context, parent Fid, name string, perm uint3
 	panic("not implemented")
 }
 
-func (c *client) Stat(context.Context, Fid) (Dir, error) {
-	panic("not implemented")
+func (c *client) Stat(ctx context.Context, fid Fid) (Dir, error) {
+	fcall := newFcall(MessageTstat{Fid: fid})
+
+	resp, err := c.transport.send(ctx, fcall)
+	if err != nil {
+		return Dir{}, err
+	}
+
+	respmsg, ok := resp.Message.(*MessageRstat)
+	if !ok {
+		return Dir{}, fmt.Errorf("invalid rpc response for stat message: %v", resp)
+	}
+
+	return respmsg.Stat, nil
 }
 
 func (c *client) WStat(context.Context, Fid, Dir) error {

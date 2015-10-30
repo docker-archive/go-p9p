@@ -148,20 +148,27 @@ func (t *transport) handle() {
 		log.Println("wait...")
 		select {
 		case req := <-t.requests:
+			if req.fcall.Tag == NOTAG {
+				// NOTE(stevvooe): We disallow fcalls with NOTAG to come
+				// through this path since we can't join the tagged response
+				// with the waiting caller. This is typically used for the
+				// Tversion/Rversion round trip to setup a session.
+				//
+				// It may be better to allow these through but block all
+				// requests until a notag message has a response.
 
-			log.Println("send", req.fcall)
-			if req.fcall.Type != Tversion {
-				tags++
-				req.fcall.Tag = tags
-				outstanding[req.fcall.Tag] = req
-			} else {
-				// TODO(stevvooe): Man this protocol is bad. Version messages
-				// have no response tag. Effectively, the client can only have
-				// one version call outstanding at a time. We have to create
-				// an entire special code path to handle it. The client
-				// shouldn't proceed until the version reply is completed.
-				req.fcall.Tag = NOTAG
+				req.err <- fmt.Errorf("disallowed tag through transport")
+				continue
 			}
+
+			// BUG(stevvooe): This is an awful tag allocation procedure.
+			// Replace this with something that let's us allocate tags and
+			// associate data with them, returning to them to a pool when
+			// complete. Such a system would provide a lot of information
+			// about outstanding requests.
+			tags++
+			req.fcall.Tag = tags
+			outstanding[req.fcall.Tag] = req
 
 			// TODO(stevvooe): Consider the case of requests that never
 			// receive a response. We need to remove the fcall context from

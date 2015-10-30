@@ -115,8 +115,11 @@ func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
 		return fmt.Errorf("message large than buffer:", n)
 	}
 
-	log.Println("channel: readFcall", fcall)
-	return ch.codec.Unmarshal(ch.rdbuf[:n], fcall)
+	if err := ch.codec.Unmarshal(ch.rdbuf[:n], fcall); err != nil {
+		return err
+	}
+	log.Println("channel: recv", fcall)
+	return nil
 }
 
 func (ch *channel) writeFcall(ctx context.Context, fcall *Fcall) error {
@@ -125,7 +128,7 @@ func (ch *channel) writeFcall(ctx context.Context, fcall *Fcall) error {
 		return ErrClosed
 	default:
 	}
-	log.Println("channel: writeFcall", fcall)
+	log.Println("channel: send", fcall)
 
 	deadline, ok := ctx.Deadline()
 	if !ok {
@@ -187,7 +190,6 @@ func readmsg(rd io.Reader, p []byte) (n int, err error) {
 		}
 	}
 
-	log.Println("msg", n, msize, mbody, len(p), p)
 	return n, nil
 }
 

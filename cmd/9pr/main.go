@@ -59,7 +59,7 @@ func main() {
 	completer := readline.NewPrefixCompleter(
 		readline.PcItem("ls"),
 		// readline.PcItem("find"),
-		// readline.PcItem("stat"),
+		readline.PcItem("stat"),
 		readline.PcItem("cat"),
 		readline.PcItem("cd"),
 		readline.PcItem("pwd"),
@@ -123,6 +123,8 @@ func main() {
 			cmd = commander.cmdpwd
 		case "cat":
 			cmd = commander.cmdcat
+		case "stat":
+			cmd = commander.cmdstat
 		default:
 			cmd = func(ctx context.Context, args ...string) error {
 				return fmt.Errorf("command not implemented")
@@ -176,7 +178,7 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 		defer c.session.Clunk(ctx, targetfid)
 
-		qid, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+		_, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
 		if err != nil {
 			return err
 		}
@@ -245,6 +247,34 @@ func (c *fsCommander) cmdcd(ctx context.Context, args ...string) error {
 	c.pwdfid = targetfid
 
 	return nil
+}
+
+func (c *fsCommander) cmdstat(ctx context.Context, args ...string) error {
+	ps := []string{c.pwd}
+	if len(args) > 0 {
+		ps = args
+	}
+
+	wr := tabwriter.NewWriter(c.stdout, 0, 8, 8, ' ', 0)
+
+	for _, p := range ps {
+		targetfid := c.nextfid
+		c.nextfid++
+		components := strings.Split(strings.Trim(p, "/"), "/")
+		if _, err := c.session.Walk(ctx, c.rootfid, targetfid, components...); err != nil {
+			return err
+		}
+		defer c.session.Clunk(ctx, targetfid)
+
+		d, err := c.session.Stat(ctx, targetfid)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(wr, "%v\t%v\t%v\t%s\n", os.FileMode(d.Mode), d.Length, d.ModTime, d.Name)
+	}
+
+	return wr.Flush()
 }
 
 func (c *fsCommander) cmdpwd(ctx context.Context, args ...string) error {

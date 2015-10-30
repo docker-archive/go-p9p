@@ -104,18 +104,42 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err != nil {
 				return err
 			}
-		case Message, *Qid, *Dir:
-			// BUG(stevvooe): The encoding for Dir is incorrect. Under certain
-			// cases, we need to include size field and in other cases, such
-			// as Twstat, we need the size twice. See bugs in
-			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
+		case *Dir:
+			// NOTE(stevvooe): See bugs in http://man.cat-v.org/plan_9/5/stat
+			// to make sense of this. The field has been included here but we
+			// need to make sure to double emit it for Rstat.
 
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
 			}
 
+			elements = append([]interface{}{uint16(size9p(elements...))}, elements...)
+
 			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case Message:
+			elements, err := fields9p(v)
+			if err != nil {
+				return err
+			}
+
+			switch v.(type) {
+			case MessageRstat, *MessageRstat:
+				// encode an size header in front of the dir field
+				elements = append([]interface{}{uint16(size9p(elements...))}, elements...)
+			}
+
+			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case *Qid:
+			if err := e.encode(*v); err != nil {
+				return err
+			}
+		case Qid:
+			if err := e.encode(v.Type, v.Version, v.Path); err != nil {
 				return err
 			}
 		case *[]Qid:
@@ -284,13 +308,28 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := dec.decode(elements...); err != nil {
 				return err
 			}
-		case Message, *Qid:
+		case Message:
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
 			}
 
+			// special case twstat and rstat for size fields. See bugs in
+			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
+			switch v.(type) {
+			case *MessageRstat, MessageRstat:
+				// decode extra size header for stat structure.
+				var ll uint16
+				if err := d.decode(&ll); err != nil {
+					return err
+				}
+			}
+
 			if err := d.decode(elements...); err != nil {
+				return err
+			}
+		case *Qid:
+			if err := d.decode(&v.Type, &v.Version, &v.Path); err != nil {
 				return err
 			}
 		default:
@@ -330,7 +369,7 @@ func size9p(vs ...interface{}) uint32 {
 
 			s += size9p(elements...)
 		case *[]byte:
-			s += size9p(uint16(0), *v)
+			s += size9p(uint32(0), *v)
 		case *[]Qid:
 			s += size9p(*v)
 		case []Qid:
@@ -342,7 +381,32 @@ func size9p(vs ...interface{}) uint32 {
 			s += size9p(elements...)
 		case time.Time, *time.Time:
 			s += size9p(uint32(0))
-		case Message, *Qid, *Dir:
+		case Qid:
+			s += size9p(v.Type, v.Version, v.Path)
+		case Dir:
+			// walk the fields of the message to get the total size. we just
+			// use the field order from the message struct. We may add tag
+			// ignoring if needed.
+			elements, err := fields9p(v)
+			if err != nil {
+				// BUG(stevvooe): The options here are to return 0, panic or
+				// make this return an error. Ideally, we make it safe to
+				// return 0 and have the rest of the package do the right
+				// thing. For now, we do this, but may want to panic until
+				// things are stable.
+				panic(err)
+			}
+
+			s += size9p(elements...) + size9p(uint16(0))
+		case Message:
+
+			// special case twstat and rstat for size fields. See bugs in
+			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
+			switch v.(type) {
+			case *MessageRstat, MessageRstat:
+				s += size9p(uint16(0)) // for extra size field before dir
+			}
+
 			// walk the fields of the message to get the total size. we just
 			// use the field order from the message struct. We may add tag
 			// ignoring if needed.
@@ -357,6 +421,10 @@ func size9p(vs ...interface{}) uint32 {
 			}
 
 			s += size9p(elements...)
+		case *Qid:
+			s += size9p(*v)
+		case *Dir:
+			s += size9p(*v)
 		case Fcall:
 			s += size9p(v.Type, v.Tag, v.Message)
 		case *Fcall:
@@ -414,7 +482,7 @@ func string9p(v interface{}) string {
 	for i := 0; i < rv.NumField(); i++ {
 		f := rv.Field(i)
 
-		s += fmt.Sprintf(" %v=%v", strings.ToLower(rv.Type().Field(i).Name), f)
+		s += fmt.Sprintf(" %v=%v", strings.ToLower(rv.Type().Field(i).Name), f.Interface())
 	}
 
 	return s
