@@ -45,6 +45,8 @@ func main() {
 		}
 
 		go func(conn net.Conn) {
+			defer conn.Close()
+
 			ctx := context.WithValue(ctx, "conn", conn)
 			log.Println("connected", conn.RemoteAddr())
 			session, err := newLocalSession(ctx, root)

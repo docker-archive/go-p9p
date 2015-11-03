@@ -121,6 +121,25 @@ func newFcall(msg Message) *Fcall {
 	}
 }
 
+func newErrorFcall(tag Tag, err error) *Fcall {
+	var msg Message
+
+	switch v := err.(type) {
+	case MessageRerror:
+		msg = v
+	case *MessageRerror:
+		msg = v
+	default:
+		msg = MessageRerror{Ename: v.Error()}
+	}
+
+	return &Fcall{
+		Type:    Rerror,
+		Tag:     tag,
+		Message: msg,
+	}
+}
+
 func (fc *Fcall) String() string {
 	return fmt.Sprintf("%v(%v) %v", fc.Type, fc.Tag, string9p(fc.Message))
 }
@@ -141,9 +160,9 @@ func newMessage(typ FcallType) (Message, error) {
 	case Rversion:
 		return &MessageRversion{}, nil
 	case Tauth:
-
+		return &MessageTauth{}, nil
 	case Rauth:
-
+		return &MessageRauth{}, nil
 	case Tattach:
 		return &MessageTattach{}, nil
 	case Rattach:
@@ -163,9 +182,9 @@ func newMessage(typ FcallType) (Message, error) {
 	case Ropen:
 		return &MessageRopen{}, nil
 	case Tcreate:
-
+		return &MessageTcreate{}, nil
 	case Rcreate:
-
+		return &MessageRcreate{}, nil
 	case Tread:
 		return &MessageTread{}, nil
 	case Rread:
@@ -219,6 +238,10 @@ type MessageRauth struct {
 
 type MessageRerror struct {
 	Ename string
+}
+
+func (e MessageRerror) Error() string {
+	return fmt.Sprintf("9p: %v", e.Ename)
 }
 
 type MessageTflush struct {
@@ -300,6 +323,8 @@ type MessageTremove struct {
 	Fid Fid
 }
 
+type MessageRremove struct{}
+
 type MessageTstat struct {
 	Fid Fid
 }
@@ -317,9 +342,9 @@ func (MessageTversion) Type() FcallType { return Tversion }
 func (MessageRversion) Type() FcallType { return Rversion }
 func (MessageTauth) Type() FcallType    { return Tauth }
 func (MessageRauth) Type() FcallType    { return Rauth }
-func (MessageRerror) Type() FcallType   { return Rerror }
 func (MessageTflush) Type() FcallType   { return Tflush }
 func (MessageRflush) Type() FcallType   { return Rflush }
+func (MessageRerror) Type() FcallType   { return Rerror }
 func (MessageTattach) Type() FcallType  { return Tattach }
 func (MessageRattach) Type() FcallType  { return Rattach }
 func (MessageTwalk) Type() FcallType    { return Twalk }
@@ -335,6 +360,7 @@ func (MessageRwrite) Type() FcallType   { return Rwrite }
 func (MessageTclunk) Type() FcallType   { return Tclunk }
 func (MessageRclunk) Type() FcallType   { return Rclunk }
 func (MessageTremove) Type() FcallType  { return Tremove }
+func (MessageRremove) Type() FcallType  { return Rremove }
 func (MessageTstat) Type() FcallType    { return Tstat }
 func (MessageRstat) Type() FcallType    { return Rstat }
 func (MessageTwstat) Type() FcallType   { return Twstat }

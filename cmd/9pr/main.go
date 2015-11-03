@@ -35,8 +35,14 @@ func main() {
 	log.SetFlags(0)
 	flag.Parse()
 
+	proto := "tcp"
+	if strings.HasPrefix(addr, "unix:") {
+		proto = "unix"
+		addr = addr[5:]
+	}
+
 	log.Println("dialing", addr)
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.Dial(proto, addr)
 	if err != nil {
 		log.Fatal(err)
 	}

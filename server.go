@@ -1,20 +1,39 @@
 package p9pnew
 
 import (
-	"bufio"
-	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"golang.org/x/net/context"
 )
 
 // Serve the 9p session over the provided network connection.
 func Serve(ctx context.Context, conn net.Conn, session Session) {
+	const msize = 64 << 10
+	const vers = "9P2000"
+
+	ch := newChannel(conn, codec9p{}, msize)
+
+	negctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	// TODO(stevvooe): For now, we negotiate here. It probably makes sense to
+	// do this outside of this function and then pass in a ready made channel.
+	// We are not really ready to export the channel type yet.
+
+	if err := ch.negotiate(negctx, vers); err != nil {
+		// TODO(stevvooe): Need better error handling and retry support here.
+		// For now, we silently ignore the failure.
+		log.Println("error negotiating version:", err)
+		return
+	}
+
 	s := &server{
 		ctx:     ctx,
-		conn:    conn,
-		session: session,
+		ch:      ch,
+		handler: &dispatcher{session: session},
+		closed:  make(chan struct{}),
 	}
 
 	s.run()
@@ -23,17 +42,20 @@ func Serve(ctx context.Context, conn net.Conn, session Session) {
 type server struct {
 	ctx     context.Context
 	session Session
-	conn    net.Conn
+	ch      *channel
+	handler handler
 	closed  chan struct{}
 }
 
-func (s *server) run() {
-	brd := bufio.NewReader(s.conn)
-	dec := &decoder{brd}
-	bwr := bufio.NewWriter(s.conn)
-	enc := &encoder{bwr}
+type activeTag struct {
+	ctx       context.Context
+	request   *Fcall
+	cancel    context.CancelFunc
+	responded bool // true, if some response was sent (Response or Rflush/Rerror)
+}
 
-	tags := map[Tag]*Fcall{} // active requests
+func (s *server) run() {
+	tags := map[Tag]*activeTag{} // active requests
 
 	log.Println("server.run()")
 	for {
@@ -45,148 +67,90 @@ func (s *server) run() {
 		default:
 		}
 
-		// NOTE(stevvooe): For now, we only provide a single request at a time
-		// handler. We can refactor this to take requests off the wire as
-		// quickly as they arrive and dispatch in parallel to session.
+		// BUG(stevvooe): This server blocks on reads, calls to handlers and
+		// write, effectively single tracking fcalls through a target
+		// dispatcher. There is no reason we couldn't parallelize these
+		// requests out to the dispatcher to get massive performance
+		// improvements.
 
 		log.Println("server:", "wait")
-		fcall := new(Fcall)
-
-		// BUG(stevvooe): The decoder is not reliably consuming all of the
-		// bytes of the wire. Needs to be setup to consume all bytes indicated
-		// in the size portion. Should use msize from the version negotiation.
-
-		if err := dec.decode(fcall); err != nil {
-			log.Println("server decoding fcall:", err)
+		req := new(Fcall)
+		if err := s.ch.readFcall(s.ctx, req); err != nil {
+			log.Println("server: error reading fcall", err)
 			continue
 		}
 
-		log.Println("server:", "message", fcall)
-
-		if _, ok := tags[fcall.Tag]; ok {
-			if err := enc.encode(&Fcall{
-				Type: Rerror,
-				Tag:  fcall.Tag,
-				Message: &MessageRerror{
-					Ename: ErrDuptag.Error(),
-				},
-			}); err != nil {
-				log.Println("server:", err)
+		if _, ok := tags[req.Tag]; ok {
+			resp := newErrorFcall(req.Tag, ErrDuptag)
+			if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+				log.Printf("error sending duplicate tag response: %v", err)
 			}
-			bwr.Flush()
-			continue
-		}
-		tags[fcall.Tag] = fcall
-
-		resp, err := s.handle(s.ctx, fcall)
-		if err != nil {
-			log.Println("server:", err)
 			continue
 		}
 
-		if err := enc.encode(resp); err != nil {
-			log.Println("server:", err)
+		// handle flush calls. The tag never makes it into active from here.
+		if mf, ok := req.Message.(MessageTflush); ok {
+			log.Println("flushing message", mf.Oldtag)
+
+			// check if we have actually know about the requested flush
+			active, ok := tags[mf.Oldtag]
+			if ok {
+				active.cancel() // cancel the context
+
+				resp := newFcall(MessageRflush{})
+				resp.Tag = req.Tag
+				if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+					log.Printf("error responding to flush: %v", err)
+				}
+				active.responded = true
+			} else {
+				resp := newErrorFcall(req.Tag, ErrUnknownTag)
+				if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+					log.Printf("error responding to flush: %v", err)
+				}
+			}
+
 			continue
 		}
-		bwr.Flush()
 
+		// TODO(stevvooe): Add handler timeout here, as well, if we desire.
+
+		// Allows us to signal handlers to cancel processing of the fcall
+		// through context.
+		ctx, cancel := context.WithCancel(s.ctx)
+
+		tags[req.Tag] = &activeTag{
+			ctx:     ctx,
+			request: req,
+			cancel:  cancel,
+		}
+
+		resp, err := s.handler.handle(ctx, req)
+		if err != nil {
+			// all handler errors are forwarded as protocol errors.
+			resp = newErrorFcall(req.Tag, err)
+		}
+		resp.Tag = req.Tag
+
+		if err := ctx.Err(); err != nil {
+			// NOTE(stevvooe): We aren't really getting our moneys worth for
+			// how this is being handled. We really need to dispatch each
+			// request handler to a separate thread.
+
+			// the context was canceled for some reason, perhaps timeout or
+			// due to a flush call. We treat this as a condition where a
+			// response should not be sent.
+			log.Println("context error:", err)
+			continue
+		}
+
+		if !tags[req.Tag].responded {
+			if err := s.ch.writeFcall(ctx, resp); err != nil {
+				log.Println("server: error writing fcall:", err)
+				continue
+			}
+		}
+
+		delete(tags, req.Tag)
 	}
-}
-
-// handle responds to an fcall using the session. An error is only returned if
-// the handler cannot proceed. All session errors are returned as Rerror.
-func (s *server) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
-	var resp *Fcall
-	switch req.Type {
-	case Tattach:
-		reqmsg, ok := req.Message.(*MessageTattach)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
-		}
-
-		qid, err := s.session.Attach(ctx, reqmsg.Fid, reqmsg.Afid, reqmsg.Uname, reqmsg.Aname)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = &Fcall{
-			Type: Rattach,
-			Tag:  req.Tag,
-			Message: &MessageRattach{
-				Qid: qid,
-			},
-		}
-	case Twalk:
-		reqmsg, ok := req.Message.(*MessageTwalk)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
-		}
-
-		// TODO(stevvooe): This is one of the places where we need to manage
-		// fid allocation lifecycle. We need to reserve the fid, then, if this
-		// call succeeds, we should alloc the fid for future uses. Also need
-		// to interact correctly with concurrent clunk and the flush of this
-		// walk message.
-		qids, err := s.session.Walk(ctx, reqmsg.Fid, reqmsg.Newfid, reqmsg.Wnames...)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(&MessageRwalk{
-			Qids: qids,
-		})
-	case Topen:
-		reqmsg, ok := req.Message.(*MessageTopen)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		qid, iounit, err := s.session.Open(ctx, reqmsg.Fid, reqmsg.Mode)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(&MessageRopen{
-			Qid:    qid,
-			IOUnit: iounit,
-		})
-	case Tread:
-		reqmsg, ok := req.Message.(*MessageTread)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		p := make([]byte, int(reqmsg.Count))
-		n, err := s.session.Read(ctx, reqmsg.Fid, p, int64(reqmsg.Offset))
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(&MessageRread{
-			Data: p[:n],
-		})
-	case Tclunk:
-		reqmsg, ok := req.Message.(*MessageTclunk)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		// TODO(stevvooe): Manage the clunking of file descriptors based on
-		// walk and attach call progression.
-		if err := s.session.Clunk(ctx, reqmsg.Fid); err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(&MessageRclunk{})
-	}
-
-	if resp == nil {
-		log.Println("unknown message type:", req.Type)
-		resp = newFcall(&MessageRerror{
-			Ename: "unknown message type",
-		})
-	}
-
-	resp.Tag = req.Tag
-	return resp, nil
 }

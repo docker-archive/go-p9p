@@ -1,9 +1,6 @@
 package p9pnew
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // common errors returned by Session interface methods
 var (
@@ -33,17 +30,12 @@ var (
 	ErrWalknodir    = new9pError("walk in non-directory")
 
 	// extra errors not part of the normal protocol
-	ErrTimeout = new9pError("fcall timeout") // returned when timing out on the fcall
+	ErrTimeout    = new9pError("fcall timeout") // returned when timing out on the fcall
+	ErrUnknownTag = new9pError("unknown tag")
+	ErrUnknownMsg = new9pError("unknown message") // returned when encountering unknown message type
 )
 
-type error9p struct {
-	Name string
-}
-
+// new9pError returns a new 9p error ready for the wire.
 func new9pError(s string) error {
-	return error9p{Name: s}
-}
-
-func (e error9p) Error() string {
-	return fmt.Sprintf("9p: %v", e.Name)
+	return MessageRerror{Ename: s}
 }

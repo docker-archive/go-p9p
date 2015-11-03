@@ -16,6 +16,9 @@ type roundTripper interface {
 	send(ctx context.Context, fc *Fcall) (*Fcall, error)
 }
 
+// transport plays the role of being a client channel manager. It multiplexes
+// function calls onto the wire and dispatches responses to blocking calls to
+// send. On the whole, transport is thread-safe for calling send
 type transport struct {
 	ctx      context.Context
 	ch       *channel
