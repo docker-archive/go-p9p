@@ -29,9 +29,16 @@ type Channel interface {
 	// be called concurrently with other calls to WriteFcall.
 	WriteFcall(ctx context.Context, fcall *Fcall) error
 
+	// MSize returns the current msize for the channel.
+	MSize() int
+
 	// SetMSize sets the maximum message size for the channel. This must never
 	// be called currently with ReadFcall or WriteFcall.
 	SetMSize(msize int)
+}
+
+func NewChannel(conn net.Conn, msize int) Channel {
+	return newChannel(conn, codec9p{}, msize)
 }
 
 const (
@@ -86,9 +93,13 @@ func newChannel(conn net.Conn, codec Codec, msize int) *channel {
 	}
 }
 
+func (ch *channel) MSize() int {
+	return ch.msize
+}
+
 // setmsize resizes the buffers for use with a separate msize. This call must
 // be protected by a mutex or made before passing to other goroutines.
-func (ch *channel) setmsize(msize int) {
+func (ch *channel) SetMSize(msize int) {
 	// NOTE(stevvooe): We cannot safely resize the buffered reader and writer.
 	// Proceed assuming that original size is sufficient.
 
@@ -104,88 +115,8 @@ func (ch *channel) setmsize(msize int) {
 	ch.wrbuf = make([]byte, msize)
 }
 
-// version negiotiates the protocol version using channel, blocking until a
-// response is received. The received values can be used to set msize for the
-// channel or assist in client setup.
-func (ch *channel) version(ctx context.Context, msize uint32, version string) (uint32, string, error) {
-	req := newFcall(MessageTversion{
-		MSize:   uint32(msize),
-		Version: version,
-	})
-
-	if err := ch.writeFcall(ctx, req); err != nil {
-		return 0, "", err
-	}
-
-	resp := new(Fcall)
-	if err := ch.readFcall(ctx, resp); err != nil {
-		return 0, "", err
-	}
-
-	mv, ok := resp.Message.(*MessageRversion)
-	if !ok {
-		return 0, "", fmt.Errorf("invalid rpc response for version message: %v", resp)
-	}
-
-	return mv.MSize, mv.Version, nil
-}
-
-// negotiate blocks until a version message is received or a timeout occurs.
-// The msize for the tranport will be set from the negotiation. If negotiate
-// returns nil, a server may proceed with the connection.
-//
-// In the future, it might be better to handle the version messages in a
-// separate object that manages the session. Each set of version requests
-// effectively "reset" a connection, meaning all fids get clunked and all
-// outstanding IO is aborted. This is probably slightly racy, in practice with
-// a misbehaved client. The main issue is that we cannot tell which session
-// messages belong to.
-func (ch *channel) negotiate(ctx context.Context, version string) error {
-	// wait for the version message over the transport.
-	req := new(Fcall)
-	if err := ch.readFcall(ctx, req); err != nil {
-		return err
-	}
-
-	mv, ok := req.Message.(*MessageTversion)
-	if !ok {
-		return fmt.Errorf("expected version message: %v", mv)
-	}
-
-	respmsg := MessageRversion{
-		Version: version,
-	}
-
-	if mv.Version != version {
-		// TODO(stevvooe): Not the best place to do version handling. We need
-		// to have a way to pass supported versions into this method then have
-		// it return the actual version. For now, respond with unknown for
-		// anything that doesn't match the provided version string.
-		respmsg.Version = "unknown"
-	}
-
-	if int(mv.MSize) < ch.msize {
-		// if the server msize is too large, use the client's suggested msize.
-		ch.setmsize(int(mv.MSize))
-		respmsg.MSize = mv.MSize
-	} else {
-		respmsg.MSize = uint32(ch.msize)
-	}
-
-	resp := newFcall(respmsg)
-	if err := ch.writeFcall(ctx, resp); err != nil {
-		return err
-	}
-
-	if respmsg.Version == "unknown" {
-		return fmt.Errorf("bad version negotiation")
-	}
-
-	return nil
-}
-
 // ReadFcall reads the next message from the channel into fcall.
-func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
+func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -225,7 +156,7 @@ func (ch *channel) readFcall(ctx context.Context, fcall *Fcall) error {
 	return nil
 }
 
-func (ch *channel) writeFcall(ctx context.Context, fcall *Fcall) error {
+func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

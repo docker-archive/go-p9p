@@ -21,7 +21,7 @@ type roundTripper interface {
 // send. On the whole, transport is thread-safe for calling send
 type transport struct {
 	ctx      context.Context
-	ch       *channel
+	ch       Channel
 	requests chan *fcallRequest
 	closed   chan struct{}
 
@@ -118,7 +118,7 @@ func (t *transport) handle() {
 	loop:
 		for {
 			fcall := new(Fcall)
-			if err := t.ch.readFcall(t.ctx, fcall); err != nil {
+			if err := t.ch.ReadFcall(t.ctx, fcall); err != nil {
 				switch err := err.(type) {
 				case net.Error:
 					if err.Timeout() || err.Temporary() {
@@ -177,7 +177,7 @@ func (t *transport) handle() {
 			// receive a response. We need to remove the fcall context from
 			// the tag map and dealloc the tag. We may also want to send a
 			// flush for the tag.
-			if err := t.ch.writeFcall(req.ctx, req.fcall); err != nil {
+			if err := t.ch.WriteFcall(req.ctx, req.fcall); err != nil {
 				log.Println("error writing fcall", err, req.fcall)
 				delete(outstanding, req.fcall.Tag)
 				req.err <- err

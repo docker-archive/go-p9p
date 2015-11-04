@@ -22,7 +22,7 @@ func Serve(ctx context.Context, conn net.Conn, session Session) {
 	// do this outside of this function and then pass in a ready made channel.
 	// We are not really ready to export the channel type yet.
 
-	if err := ch.negotiate(negctx, vers); err != nil {
+	if err := servernegotiate(negctx, ch, vers); err != nil {
 		// TODO(stevvooe): Need better error handling and retry support here.
 		// For now, we silently ignore the failure.
 		log.Println("error negotiating version:", err)
@@ -42,7 +42,7 @@ func Serve(ctx context.Context, conn net.Conn, session Session) {
 type server struct {
 	ctx     context.Context
 	session Session
-	ch      *channel
+	ch      Channel
 	handler handler
 	closed  chan struct{}
 }
@@ -75,14 +75,14 @@ func (s *server) run() {
 
 		log.Println("server:", "wait")
 		req := new(Fcall)
-		if err := s.ch.readFcall(s.ctx, req); err != nil {
+		if err := s.ch.ReadFcall(s.ctx, req); err != nil {
 			log.Println("server: error reading fcall", err)
 			continue
 		}
 
 		if _, ok := tags[req.Tag]; ok {
 			resp := newErrorFcall(req.Tag, ErrDuptag)
-			if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+			if err := s.ch.WriteFcall(s.ctx, resp); err != nil {
 				log.Printf("error sending duplicate tag response: %v", err)
 			}
 			continue
@@ -99,13 +99,13 @@ func (s *server) run() {
 
 				resp := newFcall(MessageRflush{})
 				resp.Tag = req.Tag
-				if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+				if err := s.ch.WriteFcall(s.ctx, resp); err != nil {
 					log.Printf("error responding to flush: %v", err)
 				}
 				active.responded = true
 			} else {
 				resp := newErrorFcall(req.Tag, ErrUnknownTag)
-				if err := s.ch.writeFcall(s.ctx, resp); err != nil {
+				if err := s.ch.WriteFcall(s.ctx, resp); err != nil {
 					log.Printf("error responding to flush: %v", err)
 				}
 			}
@@ -145,7 +145,7 @@ func (s *server) run() {
 		}
 
 		if !tags[req.Tag].responded {
-			if err := s.ch.writeFcall(ctx, resp); err != nil {
+			if err := s.ch.WriteFcall(ctx, resp); err != nil {
 				log.Println("server: error writing fcall:", err)
 				continue
 			}

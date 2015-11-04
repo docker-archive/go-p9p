@@ -26,19 +26,9 @@ func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
 	ch := newChannel(conn, codec9p{}, msize) // sets msize, effectively.
 
 	// negotiate the protocol version
-	smsize, svers, err := ch.version(ctx, msize, vers)
+	_, err := clientnegotiate(ctx, ch, vers)
 	if err != nil {
 		return nil, err
-	}
-
-	if svers != vers {
-		// TODO(stevvooe): A stubborn client indeed!
-		return nil, fmt.Errorf("unsupported server version: %v", vers)
-	}
-
-	if smsize > msize {
-		// upgrade msize if server differs.
-		ch.setmsize(int(smsize))
 	}
 
 	return &client{
