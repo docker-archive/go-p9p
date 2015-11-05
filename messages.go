@@ -3,7 +3,10 @@ package p9pnew
 import "fmt"
 
 // Message represents the target of an fcall.
-type Message interface{}
+type Message interface {
+	// Type returns the type of call for the target message.
+	Type() FcallType
+}
 
 // newMessage returns a new instance of the message based on the Fcall type.
 func newMessage(typ FcallType) (Message, error) {
@@ -65,70 +68,6 @@ func newMessage(typ FcallType) (Message, error) {
 	}
 
 	return nil, fmt.Errorf("unknown message type")
-}
-
-func messageType(m Message) FcallType {
-	switch v := m.(type) {
-	case MessageTversion:
-		return Tversion
-	case MessageRversion:
-		return Rversion
-	case MessageTauth:
-		return Tauth
-	case MessageRauth:
-		return Rauth
-	case MessageTflush:
-		return Tflush
-	case MessageRflush:
-		return Rflush
-	case MessageRerror:
-		return Rerror
-	case MessageTattach:
-		return Tattach
-	case MessageRattach:
-		return Rattach
-	case MessageTwalk:
-		return Twalk
-	case MessageRwalk:
-		return Rwalk
-	case MessageTopen:
-		return Topen
-	case MessageRopen:
-		return Ropen
-	case MessageTcreate:
-		return Tcreate
-	case MessageRcreate:
-		return Rcreate
-	case MessageTread:
-		return Tread
-	case MessageRread:
-		return Rread
-	case MessageTwrite:
-		return Twrite
-	case MessageRwrite:
-		return Rwrite
-	case MessageTclunk:
-		return Tclunk
-	case MessageRclunk:
-		return Rclunk
-	case MessageTremove:
-		return Tremove
-	case MessageRremove:
-		return Rremove
-	case MessageTstat:
-		return Tstat
-	case MessageRstat:
-		return Rstat
-	case MessageTwstat:
-		return Twstat
-	case MessageRwstat:
-		return Rwstat
-	case error:
-		return Rerror
-	default:
-		// NOTE(stevvooe): This is considered a programming error.
-		panic(fmt.Sprintf("unsupported message type: %T", v))
-	}
 }
 
 // MessageVersion encodes the message body for Tversion and Rversion RPC
@@ -256,3 +195,31 @@ type MessageTwstat struct {
 }
 
 type MessageRwstat struct{}
+
+func (MessageTversion) Type() FcallType { return Tversion }
+func (MessageRversion) Type() FcallType { return Rversion }
+func (MessageTauth) Type() FcallType    { return Tauth }
+func (MessageRauth) Type() FcallType    { return Rauth }
+func (MessageRerror) Type() FcallType   { return Rerror }
+func (MessageTflush) Type() FcallType   { return Tflush }
+func (MessageRflush) Type() FcallType   { return Rflush }
+func (MessageTattach) Type() FcallType  { return Tattach }
+func (MessageRattach) Type() FcallType  { return Rattach }
+func (MessageTwalk) Type() FcallType    { return Twalk }
+func (MessageRwalk) Type() FcallType    { return Rwalk }
+func (MessageTopen) Type() FcallType    { return Topen }
+func (MessageRopen) Type() FcallType    { return Ropen }
+func (MessageTcreate) Type() FcallType  { return Tcreate }
+func (MessageRcreate) Type() FcallType  { return Rcreate }
+func (MessageTread) Type() FcallType    { return Tread }
+func (MessageRread) Type() FcallType    { return Rread }
+func (MessageTwrite) Type() FcallType   { return Twrite }
+func (MessageRwrite) Type() FcallType   { return Rwrite }
+func (MessageTclunk) Type() FcallType   { return Tclunk }
+func (MessageRclunk) Type() FcallType   { return Rclunk }
+func (MessageTremove) Type() FcallType  { return Tremove }
+func (MessageRremove) Type() FcallType  { return Rremove }
+func (MessageTstat) Type() FcallType    { return Tstat }
+func (MessageRstat) Type() FcallType    { return Rstat }
+func (MessageTwstat) Type() FcallType   { return Twstat }
+func (MessageRwstat) Type() FcallType   { return Rwstat }

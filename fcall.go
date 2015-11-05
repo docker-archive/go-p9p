@@ -108,15 +108,14 @@ type Fcall struct {
 
 func newFcall(msg Message) *Fcall {
 	var tag Tag
-	mtype := messageType(msg)
 
-	switch mtype {
+	switch msg.Type() {
 	case Tversion, Rversion:
 		tag = NOTAG
 	}
 
 	return &Fcall{
-		Type:    mtype,
+		Type:    msg.Type(),
 		Tag:     tag,
 		Message: msg,
 	}

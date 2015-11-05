@@ -202,6 +202,10 @@ func TestEncodeDecode(t *testing.T) {
 			fatalf("unexpected bytes for fcall: \n%#v != \n%#v", p, testcase.marshaled)
 		}
 
+		if size9p(testcase.target) == 0 {
+			fatalf("size of target should never be zero")
+		}
+
 		// check that size9p is working correctly
 		if int(size9p(testcase.target)) != len(testcase.marshaled) {
 			fatalf("size not correct: %v != %v", int(size9p(testcase.target)), len(testcase.marshaled))

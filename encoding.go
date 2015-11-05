@@ -349,7 +349,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 
-			v.Message = rv.Elem().Interface()
+			v.Message = rv.Elem().Interface().(Message)
 		case Message:
 			elements, err := fields9p(v)
 			if err != nil {
@@ -491,7 +491,8 @@ func fields9p(v interface{}) ([]interface{}, error) {
 		f := rv.Field(i)
 
 		if !f.CanInterface() {
-			return nil, fmt.Errorf("can't interface: %v", f)
+			// unexported field, skip it.
+			continue
 		}
 
 		if f.CanAddr() {
