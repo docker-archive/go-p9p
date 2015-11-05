@@ -6,6 +6,11 @@ import (
 )
 
 const (
+	DefaultMSize   = 64 << 10
+	DefaultVersion = "9P2000"
+)
+
+const (
 	NOFID = ^Fid(0)
 	NOTAG = ^Tag(0)
 )

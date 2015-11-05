@@ -33,7 +33,7 @@ type Session interface {
 	// Version returns the supported version and msize of the session. This
 	// can be affected by negotiating or the level of support provided by the
 	// session implementation.
-	Version() (msize uint32, version string)
+	Version() (msize int, version string)
 }
 
 func Dial(ctx context.Context, addr string) (Session, error) {

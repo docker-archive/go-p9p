@@ -10,11 +10,8 @@ import (
 
 // Serve the 9p session over the provided network connection.
 func Serve(ctx context.Context, conn net.Conn, session Session) {
-	const msize = 64 << 10
-	const vers = "9P2000"
-
+	msize, version := session.Version()
 	ch := newChannel(conn, codec9p{}, msize)
-
 	negctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
@@ -22,12 +19,14 @@ func Serve(ctx context.Context, conn net.Conn, session Session) {
 	// do this outside of this function and then pass in a ready made channel.
 	// We are not really ready to export the channel type yet.
 
-	if err := servernegotiate(negctx, ch, vers); err != nil {
+	if err := servernegotiate(negctx, ch, version); err != nil {
 		// TODO(stevvooe): Need better error handling and retry support here.
 		// For now, we silently ignore the failure.
 		log.Println("error negotiating version:", err)
 		return
 	}
+
+	ctx = withVersion(ctx, version)
 
 	s := &server{
 		ctx:     ctx,

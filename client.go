@@ -11,7 +11,7 @@ import (
 
 type client struct {
 	version   string
-	msize     uint32
+	msize     int
 	ctx       context.Context
 	transport roundTripper
 }
@@ -20,20 +20,17 @@ type client struct {
 // a context for out of bad messages, such as flushes, that may be sent by the
 // session. The session can effectively shutdown with this context.
 func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
-	const msize = 64 << 10
-	const vers = "9P2000"
-
-	ch := newChannel(conn, codec9p{}, msize) // sets msize, effectively.
+	ch := newChannel(conn, codec9p{}, DefaultMSize) // sets msize, effectively.
 
 	// negotiate the protocol version
-	_, err := clientnegotiate(ctx, ch, vers)
+	version, err := clientnegotiate(ctx, ch, DefaultVersion)
 	if err != nil {
 		return nil, err
 	}
 
 	return &client{
-		version:   vers,
-		msize:     msize,
+		version:   version,
+		msize:     ch.MSize(),
 		ctx:       ctx,
 		transport: newTransport(ctx, ch),
 	}, nil
@@ -41,7 +38,7 @@ func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
 
 var _ Session = &client{}
 
-func (c *client) Version() (uint32, string) {
+func (c *client) Version() (int, string) {
 	return c.msize, c.version
 }
 
