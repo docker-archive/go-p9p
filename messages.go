@@ -190,7 +190,7 @@ type MessageRwalk struct {
 
 type MessageTopen struct {
 	Fid  Fid
-	Mode uint8
+	Mode Flag
 }
 
 type MessageRopen struct {
@@ -202,7 +202,7 @@ type MessageTcreate struct {
 	Fid  Fid
 	Name string
 	Perm uint32
-	Mode uint8
+	Mode Flag
 }
 
 type MessageRcreate struct {

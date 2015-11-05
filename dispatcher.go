@@ -33,7 +33,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 
 		resp = newFcall(MessageRauth{Qid: qid})
 	case Tattach:
-		reqmsg, ok := req.Message.(*MessageTattach)
+		reqmsg, ok := req.Message.(MessageTattach)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
 		}
@@ -47,7 +47,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			Qid: qid,
 		})
 	case Twalk:
-		reqmsg, ok := req.Message.(*MessageTwalk)
+		reqmsg, ok := req.Message.(MessageTwalk)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
 		}
@@ -62,11 +62,11 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRwalk{
+		resp = newFcall(MessageRwalk{
 			Qids: qids,
 		})
 	case Topen:
-		reqmsg, ok := req.Message.(*MessageTopen)
+		reqmsg, ok := req.Message.(MessageTopen)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -76,17 +76,17 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRopen{
+		resp = newFcall(MessageRopen{
 			Qid:    qid,
 			IOUnit: iounit,
 		})
 	case Tcreate:
-		reqmsg, ok := req.Message.(*MessageTcreate)
+		reqmsg, ok := req.Message.(MessageTcreate)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
 
-		qid, iounit, err := d.session.Create(ctx, reqmsg.Fid, reqmsg.Name, reqmsg.Perm, uint32(reqmsg.Mode))
+		qid, iounit, err := d.session.Create(ctx, reqmsg.Fid, reqmsg.Name, reqmsg.Perm, reqmsg.Mode)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +97,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 		})
 
 	case Tread:
-		reqmsg, ok := req.Message.(*MessageTread)
+		reqmsg, ok := req.Message.(MessageTread)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -112,7 +112,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			Data: p[:n],
 		})
 	case Twrite:
-		reqmsg, ok := req.Message.(*MessageTwrite)
+		reqmsg, ok := req.Message.(MessageTwrite)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -126,7 +126,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			Count: uint32(n),
 		})
 	case Tclunk:
-		reqmsg, ok := req.Message.(*MessageTclunk)
+		reqmsg, ok := req.Message.(MessageTclunk)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -137,9 +137,9 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRclunk{})
+		resp = newFcall(MessageRclunk{})
 	case Tremove:
-		reqmsg, ok := req.Message.(*MessageTremove)
+		reqmsg, ok := req.Message.(MessageTremove)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -150,7 +150,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 
 		resp = newFcall(&MessageRremove{})
 	case Tstat:
-		reqmsg, ok := req.Message.(*MessageTstat)
+		reqmsg, ok := req.Message.(MessageTstat)
 		if !ok {
 			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
 		}
@@ -160,7 +160,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRstat{
+		resp = newFcall(MessageRstat{
 			Stat: dir,
 		})
 	case Twstat:

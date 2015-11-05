@@ -9,11 +9,11 @@ import (
 )
 
 // roundTripper manages the request and response from the client-side. A
-// roundTripper must abide by many of the rules of http.RoundTripper.
+// roundTripper must abide by similar rules to the http.RoundTripper.
 // Typically, the roundTripper will manage tag assignment and message
 // serialization.
 type roundTripper interface {
-	send(ctx context.Context, fc *Fcall) (*Fcall, error)
+	send(ctx context.Context, msg Message) (Message, error)
 }
 
 // transport plays the role of being a client channel manager. It multiplexes
@@ -27,6 +27,8 @@ type transport struct {
 
 	tags uint16
 }
+
+var _ roundTripper = &transport{}
 
 func newTransport(ctx context.Context, ch *channel) roundTripper {
 	t := &transport{
@@ -57,10 +59,10 @@ func newFcallRequest(ctx context.Context, fcall *Fcall) *fcallRequest {
 	}
 }
 
-func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
+func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
+	fcall := newFcall(msg)
 	req := newFcallRequest(ctx, fcall)
 
-	log.Println("dispatch", fcall)
 	// dispatch the request.
 	select {
 	case <-t.closed:
@@ -70,7 +72,6 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 	case t.requests <- req:
 	}
 
-	log.Println("wait", fcall)
 	// wait for the response.
 	select {
 	case <-t.closed:
@@ -80,18 +81,17 @@ func (t *transport) send(ctx context.Context, fcall *Fcall) (*Fcall, error) {
 	case err := <-req.err:
 		return nil, err
 	case resp := <-req.response:
-		log.Println("resp", resp)
 		if resp.Type == Rerror {
 			// pack the error into something useful
-			respmesg, ok := resp.Message.(*MessageRerror)
+			respmesg, ok := resp.Message.(MessageRerror)
 			if !ok {
 				return nil, fmt.Errorf("invalid error response: %v", resp)
 			}
 
-			return nil, new9pError(respmesg.Ename)
+			return nil, respmesg
 		}
 
-		return resp, nil
+		return resp.Message, nil
 	}
 }
 
@@ -178,14 +178,10 @@ func (t *transport) handle() {
 			// the tag map and dealloc the tag. We may also want to send a
 			// flush for the tag.
 			if err := t.ch.WriteFcall(req.ctx, req.fcall); err != nil {
-				log.Println("error writing fcall", err, req.fcall)
 				delete(outstanding, req.fcall.Tag)
 				req.err <- err
 			}
-
-			log.Println("sent", req.fcall)
 		case b := <-responses:
-			log.Println("recv", b)
 			req, ok := outstanding[b.Tag]
 			if !ok {
 				panic("unknown tag received")
@@ -201,6 +197,12 @@ func (t *transport) handle() {
 			return
 		}
 	}
+}
+
+func (t *transport) flush(ctx context.Context, tag Tag) error {
+	// TODO(stevvooe): We need to fire and forget flush messages when a call
+	// context gets cancelled.
+	panic("not implemented")
 }
 
 func (t *transport) Close() error {

@@ -187,7 +187,7 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 
 		if iounit < 1 {
 			msize, _ := c.session.Version()
-			iounit = msize - 24 // size of message max minus fcall io header (Rread)
+			iounit = uint32(msize - 24) // size of message max minus fcall io header (Rread)
 		}
 
 		p := make([]byte, iounit)
@@ -198,10 +198,10 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 
 		rd := bytes.NewReader(p[:n])
-
+		codec := p9pnew.NewCodec() // TODO(stevvooe): Need way to resolve codec based on session.
 		for {
 			var d p9pnew.Dir
-			if err := p9pnew.DecodeDir(rd, &d); err != nil {
+			if err := p9pnew.DecodeDir(codec, rd, &d); err != nil {
 				if err == io.EOF {
 					break
 				}
@@ -318,7 +318,7 @@ func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 
 	if iounit < 1 {
 		msize, _ := c.session.Version()
-		iounit = msize - 24 // size of message max minus fcall io header (Rread)
+		iounit = uint32(msize - 24) // size of message max minus fcall io header (Rread)
 	}
 
 	b := make([]byte, iounit)

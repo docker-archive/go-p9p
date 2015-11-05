@@ -19,6 +19,9 @@ type Codec interface {
 
 	// Marshal the value v into a byte slice.
 	Marshal(v interface{}) ([]byte, error)
+
+	// Size returns the encoded size for the target of v.
+	Size(v interface{}) int
 }
 
 func NewCodec() Codec {
@@ -43,6 +46,41 @@ func (c codec9p) Marshal(v interface{}) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+func (c codec9p) Size(v interface{}) int {
+	return int(size9p(v))
+}
+
+// DecodeDir decodes a directory entry from rd using the provided codec.
+func DecodeDir(codec Codec, rd io.Reader, d *Dir) error {
+	var ll uint16
+
+	// pull the size off the wire
+	if err := binary.Read(rd, binary.LittleEndian, &ll); err != nil {
+		return err
+	}
+
+	p := make([]byte, ll+2)
+	binary.LittleEndian.PutUint16(p, ll) // must have size at start
+
+	// read out the rest of the record
+	if _, err := io.ReadFull(rd, p[2:]); err != nil {
+		return err
+	}
+
+	return codec.Unmarshal(p, d)
+}
+
+// EncodeDir writes the directory to wr.
+func EncodeDir(codec Codec, wr io.Writer, d *Dir) error {
+	p, err := codec.Marshal(d)
+	if err != nil {
+		return err
+	}
+
+	_, err = wr.Write(p)
+	return err
+}
+
 type encoder struct {
 	wr io.Writer
 }
@@ -50,8 +88,8 @@ type encoder struct {
 func (e *encoder) encode(vs ...interface{}) error {
 	for _, v := range vs {
 		switch v := v.(type) {
-		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid,
-			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid, Flag,
+			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid, *Flag:
 			if err := binary.Write(e.wr, binary.LittleEndian, v); err != nil {
 				return err
 			}
@@ -188,7 +226,7 @@ type decoder struct {
 func (d *decoder) decode(vs ...interface{}) error {
 	for _, v := range vs {
 		switch v := v.(type) {
-		case *uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+		case *uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid, *Flag:
 			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
 				return err
 			}
@@ -352,8 +390,8 @@ func size9p(vs ...interface{}) uint32 {
 		}
 
 		switch v := v.(type) {
-		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid,
-			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid, Flag,
+			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid, *Flag:
 			s += uint32(binary.Size(v))
 		case []byte:
 			s += uint32(binary.Size(uint32(0)) + len(v))

@@ -31,7 +31,7 @@ func clientnegotiate(ctx context.Context, ch Channel, version string) (string, e
 	}
 
 	switch v := resp.Message.(type) {
-	case *MessageRversion:
+	case MessageRversion:
 
 		if v.Version != version {
 			// TODO(stevvooe): A stubborn client indeed!
@@ -47,7 +47,7 @@ func clientnegotiate(ctx context.Context, ch Channel, version string) (string, e
 	case error:
 		return "", v
 	default:
-		return "", fmt.Errorf("invalid rpc response for version message: %v", resp)
+		return "", ErrUnexpectedMsg
 	}
 }
 

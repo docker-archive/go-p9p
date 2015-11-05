@@ -2,13 +2,8 @@ package p9pnew
 
 import "errors"
 
-// common errors returned by Session interface methods
 var (
-	ErrClosed = errors.New("closed")
-)
-
-// 9p wire errors returned by Session interface methods
-var (
+	// 9p wire errors returned by Session interface methods
 	ErrBadattach    = new9pError("unknown specifier in attach")
 	ErrBadoffset    = new9pError("bad offset")
 	ErrBadcount     = new9pError("bad count")
@@ -30,9 +25,12 @@ var (
 	ErrWalknodir    = new9pError("walk in non-directory")
 
 	// extra errors not part of the normal protocol
-	ErrTimeout    = new9pError("fcall timeout") // returned when timing out on the fcall
-	ErrUnknownTag = new9pError("unknown tag")
-	ErrUnknownMsg = new9pError("unknown message") // returned when encountering unknown message type
+	ErrTimeout       = new9pError("fcall timeout") // returned when timing out on the fcall
+	ErrUnknownTag    = new9pError("unknown tag")
+	ErrUnknownMsg    = new9pError("unknown message")    // returned when encountering unknown message type
+	ErrUnexpectedMsg = new9pError("unexpected message") // returned when an unexpected message is encountered
+	ErrWalkLimit     = new9pError("too many wnames in walk")
+	ErrClosed        = errors.New("closed")
 )
 
 // new9pError returns a new 9p error ready for the wire.

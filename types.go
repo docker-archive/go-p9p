@@ -36,11 +36,14 @@ const (
 	DMEXEC  = 0x1 // mode bit for execute permission
 )
 
+// Flag defines the flag type for use with open and create
+type Flag uint8
+
 const (
-	OREAD  = 0x00 // open for read
-	OWRITE = 0x01 // write
-	ORDWR  = 0x02 // read and write
-	OEXEC  = 0x03 // execute, == read but check execute permission
+	OREAD  Flag = 0x00 // open for read
+	OWRITE      = 0x01 // write
+	ORDWR       = 0x02 // read and write
+	OEXEC       = 0x03 // execute, == read but check execute permission
 
 	// PROPOSAL(stevvooe): Possible protocal extension to allow the create of
 	// symlinks. Initially, the link is created with no value. Read and write
@@ -53,16 +56,17 @@ const (
 	ORCLOSE = 0x40 // or'ed in, remove on close
 )
 
+// QType indicates the type of a resource within the Qid.
 type QType uint8
 
 const (
 	QTDIR    QType = 0x80 // type bit for directories
-	QTAPPEND QType = 0x40 // type bit for append only files
-	QTEXCL   QType = 0x20 // type bit for exclusive use files
-	QTMOUNT  QType = 0x10 // type bit for mounted channel
-	QTAUTH   QType = 0x08 // type bit for authentication file
-	QTTMP    QType = 0x04 // type bit for not-backed-up file
-	QTFILE   QType = 0x00 // plain file
+	QTAPPEND       = 0x40 // type bit for append only files
+	QTEXCL         = 0x20 // type bit for exclusive use files
+	QTMOUNT        = 0x10 // type bit for mounted channel
+	QTAUTH         = 0x08 // type bit for authentication file
+	QTTMP          = 0x04 // type bit for not-backed-up file
+	QTFILE         = 0x00 // plain file
 )
 
 func (qt QType) String() string {
