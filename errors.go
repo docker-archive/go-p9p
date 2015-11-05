@@ -1,6 +1,14 @@
 package p9pnew
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// MessageRerror provides both a Go error type and message type.
+type MessageRerror struct {
+	Ename string
+}
 
 var (
 	// 9p wire errors returned by Session interface methods
@@ -36,4 +44,12 @@ var (
 // new9pError returns a new 9p error ready for the wire.
 func new9pError(s string) error {
 	return MessageRerror{Ename: s}
+}
+
+func (MessageRerror) Type() FcallType {
+	return Rerror
+}
+
+func (e MessageRerror) Error() string {
+	return fmt.Sprintf("9p: %v", e.Ename)
 }

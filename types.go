@@ -11,11 +11,6 @@ const (
 )
 
 const (
-	NOFID = ^Fid(0)
-	NOTAG = ^Tag(0)
-)
-
-const (
 	DMDIR    = 0x80000000 // mode bit for directories
 	DMAPPEND = 0x40000000 // mode bit for append only files
 	DMEXCL   = 0x20000000 // mode bit for exclusive use files
@@ -90,7 +85,14 @@ func (qt QType) String() string {
 	return "unknown"
 }
 
+// Tag uniquely identifies an outstanding fcall in a 9p session.
+type Tag uint16
+
+const NOTAG Tag = ^Tag(0)
+
 type Fid uint32
+
+const NOFID Fid = ^Fid(0)
 
 type Qid struct {
 	Type    QType `9p:type,1`
@@ -127,6 +129,3 @@ func (d Dir) String() string {
 	return fmt.Sprintf("dir(%v mode=%v atime=%v mtime=%v length=%v name=%v uid=%v gid=%v muid=%v)",
 		d.Qid, d.Mode, d.AccessTime, d.ModTime, d.Length, d.Name, d.UID, d.GID, d.MUID)
 }
-
-//
-type Tag uint16

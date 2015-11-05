@@ -91,7 +91,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRcreate{
+		resp = newFcall(MessageRcreate{
 			Qid:    qid,
 			IOUnit: iounit,
 		})
@@ -108,7 +108,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRread{
+		resp = newFcall(MessageRread{
 			Data: p[:n],
 		})
 	case Twrite:
@@ -122,7 +122,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRwrite{
+		resp = newFcall(MessageRwrite{
 			Count: uint32(n),
 		})
 	case Tclunk:
@@ -148,7 +148,7 @@ func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
 			return nil, err
 		}
 
-		resp = newFcall(&MessageRremove{})
+		resp = newFcall(MessageRremove{})
 	case Tstat:
 		reqmsg, ok := req.Message.(MessageTstat)
 		if !ok {

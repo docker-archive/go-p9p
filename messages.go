@@ -92,14 +92,6 @@ type MessageRauth struct {
 	Qid Qid
 }
 
-type MessageRerror struct {
-	Ename string
-}
-
-func (e MessageRerror) Error() string {
-	return fmt.Sprintf("9p: %v", e.Ename)
-}
-
 type MessageTflush struct {
 	Oldtag Tag
 }
@@ -200,7 +192,6 @@ func (MessageTversion) Type() FcallType { return Tversion }
 func (MessageRversion) Type() FcallType { return Rversion }
 func (MessageTauth) Type() FcallType    { return Tauth }
 func (MessageRauth) Type() FcallType    { return Rauth }
-func (MessageRerror) Type() FcallType   { return Rerror }
 func (MessageTflush) Type() FcallType   { return Tflush }
 func (MessageRflush) Type() FcallType   { return Rflush }
 func (MessageTattach) Type() FcallType  { return Tattach }
