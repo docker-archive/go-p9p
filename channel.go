@@ -77,7 +77,6 @@ type channel struct {
 	closed chan struct{}
 	msize  int
 	rdbuf  []byte
-	wrbuf  []byte
 }
 
 func newChannel(conn net.Conn, codec Codec, msize int) *channel {
@@ -89,7 +88,6 @@ func newChannel(conn net.Conn, codec Codec, msize int) *channel {
 		closed: make(chan struct{}),
 		msize:  msize,
 		rdbuf:  make([]byte, msize),
-		wrbuf:  make([]byte, msize),
 	}
 }
 
@@ -107,12 +105,10 @@ func (ch *channel) SetMSize(msize int) {
 	if msize < len(ch.rdbuf) {
 		// just change the cap
 		ch.rdbuf = ch.rdbuf[:msize]
-		ch.wrbuf = ch.wrbuf[:msize]
 		return
 	}
 
 	ch.rdbuf = make([]byte, msize)
-	ch.wrbuf = make([]byte, msize)
 }
 
 // ReadFcall reads the next message from the channel into fcall.
@@ -175,12 +171,10 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
 	}
 
-	n, err := ch.codec.Marshal(ch.wrbuf, fcall)
+	p, err := ch.codec.Marshal(fcall)
 	if err != nil {
 		return err
 	}
-
-	p := ch.wrbuf[:n]
 
 	if err := sendmsg(ch.bwr, p); err != nil {
 		return err

@@ -9,11 +9,22 @@ import (
 )
 
 func TestEncodeDecode(t *testing.T) {
+	codec := NewCodec()
 	for _, testcase := range []struct {
 		description string
 		target      interface{}
 		marshaled   []byte
 	}{
+		{
+			description: "uint8",
+			target:      uint8('U'),
+			marshaled:   []byte{0x55},
+		},
+		{
+			description: "uint16",
+			target:      uint16(0x5544),
+			marshaled:   []byte{0x44, 0x55},
+		},
 		{
 			description: "string",
 			target:      "asdf",
@@ -28,14 +39,25 @@ func TestEncodeDecode(t *testing.T) {
 				0x4, 0x0, 0x71, 0x77, 0x65, 0x72,
 				0x4, 0x0, 0x7a, 0x78, 0x63, 0x76},
 		},
+		{
+			description: "Qid",
+			target: Qid{
+				Type:    QTDIR,
+				Version: 0x10203040,
+				Path:    0x1020304050607080},
+			marshaled: []byte{
+				byte(QTDIR),            // qtype
+				0x40, 0x30, 0x20, 0x10, // version
+				0x80, 0x70, 0x60, 0x50, 0x40, 0x30, 0x20, 0x10, // path
+			},
+		},
 		// Dir
-		// Qid
 		{
 			description: "Tversion fcall",
 			target: &Fcall{
 				Type: Tversion,
 				Tag:  2255,
-				Message: &MessageTversion{
+				Message: MessageTversion{
 					MSize:   uint32(1024),
 					Version: "9PTEST",
 				},
@@ -49,7 +71,7 @@ func TestEncodeDecode(t *testing.T) {
 			target: &Fcall{
 				Type: Rversion,
 				Tag:  2255,
-				Message: &MessageRversion{
+				Message: MessageRversion{
 					MSize:   uint32(1024),
 					Version: "9PTEST",
 				},
@@ -63,7 +85,7 @@ func TestEncodeDecode(t *testing.T) {
 			target: &Fcall{
 				Type: Twalk,
 				Tag:  5666,
-				Message: &MessageTwalk{
+				Message: MessageTwalk{
 					Fid:    1010,
 					Newfid: 1011,
 					Wnames: []string{"a", "b", "c"},
@@ -81,7 +103,7 @@ func TestEncodeDecode(t *testing.T) {
 			target: &Fcall{
 				Type: Rwalk,
 				Tag:  5556,
-				Message: &MessageRwalk{
+				Message: MessageRwalk{
 					Qids: []Qid{
 						Qid{
 							Type:    QTDIR,
@@ -105,7 +127,7 @@ func TestEncodeDecode(t *testing.T) {
 			target: &Fcall{
 				Type: Rread,
 				Tag:  5556,
-				Message: &MessageRread{
+				Message: MessageRread{
 					Data: []byte("a lot of byte data"),
 				},
 			},
@@ -119,7 +141,7 @@ func TestEncodeDecode(t *testing.T) {
 			target: &Fcall{
 				Type: Rstat,
 				Tag:  5556,
-				Message: &MessageRstat{
+				Message: MessageRstat{
 					Stat: Dir{
 						Type: ^uint16(0),
 						Dev:  ^uint32(0),
@@ -166,24 +188,18 @@ func TestEncodeDecode(t *testing.T) {
 				0x41, 0x20, 0x73, 0x65, 0x72, 0x69, 0x6f, 0x75, 0x73, 0x20, 0x65, 0x72, 0x72, 0x6f, 0x72},
 		},
 	} {
-		t.Logf("target under test: %v", testcase.target)
+		t.Logf("target under test: %#v %T", testcase.target, testcase.target)
 		fatalf := func(format string, args ...interface{}) {
 			t.Fatalf(testcase.description+": "+format, args...)
 		}
 
-		t.Logf("expecting message of %v bytes", len(testcase.marshaled))
-
-		var b bytes.Buffer
-
-		enc := &encoder{&b}
-		dec := &decoder{&b}
-
-		if err := enc.encode(testcase.target); err != nil {
+		p, err := codec.Marshal(testcase.target)
+		if err != nil {
 			fatalf("error writing fcall: %v", err)
 		}
 
-		if !bytes.Equal(b.Bytes(), testcase.marshaled) {
-			fatalf("unexpected bytes for fcall: \n%#v != \n%#v", b.Bytes(), testcase.marshaled)
+		if !bytes.Equal(p, testcase.marshaled) {
+			fatalf("unexpected bytes for fcall: \n%#v != \n%#v", p, testcase.marshaled)
 		}
 
 		// check that size9p is working correctly
@@ -200,7 +216,7 @@ func TestEncodeDecode(t *testing.T) {
 			v = reflect.New(targetType).Interface()
 		}
 
-		if err := dec.decode(v); err != nil {
+		if err := codec.Unmarshal(p, v); err != nil {
 			fatalf("error reading: %v", err)
 		}
 

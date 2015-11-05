@@ -11,24 +11,18 @@ import (
 	"time"
 )
 
-// EncodeDir is just a helper for encoding directories until we export the
-// encoder and decoder.
-func EncodeDir(wr io.Writer, d *Dir) error {
-	enc := &encoder{wr}
-
-	return enc.encode(d)
-}
-
-// DecodeDir is just a helper for decoding directories until we export the
-// encoder and decoder.
-func DecodeDir(rd io.Reader, d *Dir) error {
-	dec := &decoder{rd}
-	return dec.decode(d)
-}
-
+// Codec defines the interface for encoding and decoding of 9p types.
+// Unsupported types will throw an error.
 type Codec interface {
+	// Unmarshal from data into the value pointed to by v.
 	Unmarshal(data []byte, v interface{}) error
-	Marshal(data []byte, v interface{}) (n int, err error)
+
+	// Marshal the value v into a byte slice.
+	Marshal(v interface{}) ([]byte, error)
+}
+
+func NewCodec() Codec {
+	return codec9p{}
 }
 
 type codec9p struct{}
@@ -38,25 +32,16 @@ func (c codec9p) Unmarshal(data []byte, v interface{}) error {
 	return dec.decode(v)
 }
 
-func (c codec9p) Marshal(data []byte, v interface{}) (n int, err error) {
-	n = int(size9p(v))
-
-	buf := bytes.NewBuffer(data[:0])
-	enc := &encoder{buf}
+func (c codec9p) Marshal(v interface{}) ([]byte, error) {
+	var b bytes.Buffer
+	enc := &encoder{&b}
 
 	if err := enc.encode(v); err != nil {
-		return buf.Len(), nil
+		return nil, err
 	}
 
-	if len(data) < buf.Len() {
-		return len(data), io.ErrShortBuffer
-	}
-
-	return buf.Len(), nil
+	return b.Bytes(), nil
 }
-
-// NOTE(stevvooe): This file covers 9p encoding and decoding (despite just
-// being called encoding).
 
 type encoder struct {
 	wr io.Writer
@@ -65,37 +50,25 @@ type encoder struct {
 func (e *encoder) encode(vs ...interface{}) error {
 	for _, v := range vs {
 		switch v := v.(type) {
-		case *[]string:
-			if err := e.encode(*v); err != nil {
+		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid,
+			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+			if err := binary.Write(e.wr, binary.LittleEndian, v); err != nil {
 				return err
 			}
-		case []string:
-			if err := e.encode(uint16(len(v))); err != nil {
+		case []byte:
+			if err := e.encode(uint32(len(v))); err != nil {
 				return err
 			}
 
-			var elements []interface{}
-			for _, e := range v {
-				elements = append(elements, e)
-			}
-
-			if err := e.encode(elements...); err != nil {
+			if err := binary.Write(e.wr, binary.LittleEndian, v); err != nil {
 				return err
 			}
+
 		case *[]byte:
-			if err := e.encode(uint32(len(*v))); err != nil {
-				return err
-			}
-
-			if err := e.encode(*v); err != nil {
-				return err
-			}
-		case *string:
 			if err := e.encode(*v); err != nil {
 				return err
 			}
 		case string:
-			// implement string[s] encoding
 			if err := binary.Write(e.wr, binary.LittleEndian, uint16(len(v))); err != nil {
 				return err
 			}
@@ -104,37 +77,30 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err != nil {
 				return err
 			}
-		case *Dir:
-			// NOTE(stevvooe): See bugs in http://man.cat-v.org/plan_9/5/stat
-			// to make sense of this. The field has been included here but we
-			// need to make sure to double emit it for Rstat.
-
-			elements, err := fields9p(v)
-			if err != nil {
+		case *string:
+			if err := e.encode(*v); err != nil {
 				return err
 			}
 
-			elements = append([]interface{}{uint16(size9p(elements...))}, elements...)
-
-			if err := e.encode(elements...); err != nil {
-				return err
-			}
-		case Message:
-			elements, err := fields9p(v)
-			if err != nil {
+		case []string:
+			if err := e.encode(uint16(len(v))); err != nil {
 				return err
 			}
 
-			switch v.(type) {
-			case MessageRstat, *MessageRstat:
-				// encode an size header in front of the dir field
-				elements = append([]interface{}{uint16(size9p(elements...))}, elements...)
+			for _, m := range v {
+				if err := e.encode(m); err != nil {
+					return err
+				}
 			}
-
-			if err := e.encode(elements...); err != nil {
+		case *[]string:
+			if err := e.encode(*v); err != nil {
 				return err
 			}
-		case *Qid:
+		case time.Time:
+			if err := e.encode(uint32(v.Unix())); err != nil {
+				return err
+			}
+		case *time.Time:
 			if err := e.encode(*v); err != nil {
 				return err
 			}
@@ -142,7 +108,7 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err := e.encode(v.Type, v.Version, v.Path); err != nil {
 				return err
 			}
-		case *[]Qid:
+		case *Qid:
 			if err := e.encode(*v); err != nil {
 				return err
 			}
@@ -159,24 +125,53 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err := e.encode(elements...); err != nil {
 				return err
 			}
-		case time.Time:
-			if err := e.encode(uint32(v.Unix())); err != nil {
+		case *[]Qid:
+			if err := e.encode(*v); err != nil {
 				return err
 			}
-		case *time.Time:
+		case Dir:
+			elements, err := fields9p(v)
+			if err != nil {
+				return err
+			}
+
+			if err := e.encode(uint16(size9p(elements...))); err != nil {
+				return err
+			}
+
+			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case *Dir:
 			if err := e.encode(*v); err != nil {
 				return err
 			}
 		case Fcall:
-			if err := e.encode(&v); err != nil {
-				return err
-			}
-		case *Fcall:
 			if err := e.encode(v.Type, v.Tag, v.Message); err != nil {
 				return err
 			}
-		default:
-			if err := binary.Write(e.wr, binary.LittleEndian, v); err != nil {
+		case *Fcall:
+			if err := e.encode(*v); err != nil {
+				return err
+			}
+		case Message:
+			elements, err := fields9p(v)
+			if err != nil {
+				return err
+			}
+
+			switch v.(type) {
+			case MessageRstat, *MessageRstat:
+				// NOTE(stevvooe): Prepend size preceeding Dir. See bugs in
+				// http://man.cat-v.org/plan_9/5/stat to make sense of this.
+				// The field has been included here but we need to make sure
+				// to double emit it for Rstat.
+				if err := e.encode(uint16(size9p(elements...))); err != nil {
+					return err
+				}
+			}
+
+			if err := e.encode(elements...); err != nil {
 				return err
 			}
 		}
@@ -193,6 +188,22 @@ type decoder struct {
 func (d *decoder) decode(vs ...interface{}) error {
 	for _, v := range vs {
 		switch v := v.(type) {
+		case *uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
+				return err
+			}
+		case *[]byte:
+			var ll uint32
+
+			if err := d.decode(&ll); err != nil {
+				return err
+			}
+
+			*v = make([]byte, int(ll))
+
+			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
+				return err
+			}
 		case *string:
 			var ll uint16
 
@@ -205,7 +216,6 @@ func (d *decoder) decode(vs ...interface{}) error {
 
 			n, err := io.ReadFull(d.rd, b)
 			if err != nil {
-				log.Println("readfull failed:", err, ll, n)
 				return err
 			}
 
@@ -230,34 +240,15 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := d.decode(elements...); err != nil {
 				return err
 			}
-		case *[]byte:
-			var ll uint32
-
-			if err := d.decode(&ll); err != nil {
+		case *time.Time:
+			var epoch uint32
+			if err := d.decode(&epoch); err != nil {
 				return err
 			}
 
-			*v = make([]byte, int(ll))
-
-			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
-				return err
-			}
-		case *Fcall:
-			if err := d.decode(&v.Type, &v.Tag); err != nil {
-				return err
-			}
-
-			var err error
-			v.Message, err = newMessage(v.Type)
-			if err != nil {
-				log.Printf("unknown message type %#v", v.Type)
-				return err
-			}
-
-			// take the address of v.Message from the struct and encode into
-			// that.
-
-			if err := d.decode(v.Message); err != nil {
+			*v = time.Unix(int64(epoch), 0).UTC()
+		case *Qid:
+			if err := d.decode(&v.Type, &v.Version, &v.Path); err != nil {
 				return err
 			}
 		case *[]Qid:
@@ -276,13 +267,6 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := d.decode(elements...); err != nil {
 				return err
 			}
-		case *time.Time:
-			var epoch uint32
-			if err := d.decode(&epoch); err != nil {
-				return err
-			}
-
-			*v = time.Unix(int64(epoch), 0).UTC()
 		case *Dir:
 			var ll uint16
 
@@ -308,17 +292,39 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := dec.decode(elements...); err != nil {
 				return err
 			}
+		case *Fcall:
+			if err := d.decode(&v.Type, &v.Tag); err != nil {
+				return err
+			}
+
+			message, err := newMessage(v.Type)
+			if err != nil {
+				return err
+			}
+
+			// NOTE(stevvooe): We do a little pointer dance to allocate the
+			// new type, write to it, then assign it back to the interface as
+			// a concrete type, avoiding a pointer (the interface) to a
+			// pointer.
+			rv := reflect.New(reflect.TypeOf(message))
+			if err := d.decode(rv.Interface()); err != nil {
+				return err
+			}
+
+			v.Message = rv.Elem().Interface()
 		case Message:
 			elements, err := fields9p(v)
 			if err != nil {
 				return err
 			}
 
-			// special case twstat and rstat for size fields. See bugs in
-			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
 			switch v.(type) {
 			case *MessageRstat, MessageRstat:
-				// decode extra size header for stat structure.
+				// NOTE(stevvooe): Consume extra size preceeding Dir. See bugs
+				// in http://man.cat-v.org/plan_9/5/stat to make sense of
+				// this. The field has been included here but we need to make
+				// sure to double emit it for Rstat. decode extra size header
+				// for stat structure.
 				var ll uint16
 				if err := d.decode(&ll); err != nil {
 					return err
@@ -326,14 +332,6 @@ func (d *decoder) decode(vs ...interface{}) error {
 			}
 
 			if err := d.decode(elements...); err != nil {
-				return err
-			}
-		case *Qid:
-			if err := d.decode(&v.Type, &v.Version, &v.Path); err != nil {
-				return err
-			}
-		default:
-			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
 				return err
 			}
 		}
@@ -354,23 +352,31 @@ func size9p(vs ...interface{}) uint32 {
 		}
 
 		switch v := v.(type) {
-		case *string:
-			s += uint32(binary.Size(uint16(0)) + len(*v))
+		case uint8, uint16, uint32, uint64, FcallType, Tag, QType, Fid,
+			*uint8, *uint16, *uint32, *uint64, *FcallType, *Tag, *QType, *Fid:
+			s += uint32(binary.Size(v))
+		case []byte:
+			s += uint32(binary.Size(uint32(0)) + len(v))
+		case *[]byte:
+			s += size9p(uint32(0), *v)
 		case string:
 			s += uint32(binary.Size(uint16(0)) + len(v))
-		case *[]string:
+		case *string:
 			s += size9p(*v)
 		case []string:
 			s += size9p(uint16(0))
-			elements := make([]interface{}, len(v))
-			for i := range elements {
-				elements[i] = v[i]
-			}
 
-			s += size9p(elements...)
-		case *[]byte:
-			s += size9p(uint32(0), *v)
-		case *[]Qid:
+			for _, sv := range v {
+				s += size9p(sv)
+			}
+		case *[]string:
+			s += size9p(*v)
+		case time.Time, *time.Time:
+			// BUG(stevvooe): Y2038 is coming.
+			s += size9p(uint32(0))
+		case Qid:
+			s += size9p(v.Type, v.Version, v.Path)
+		case *Qid:
 			s += size9p(*v)
 		case []Qid:
 			s += size9p(uint16(0))
@@ -379,10 +385,9 @@ func size9p(vs ...interface{}) uint32 {
 				elements[i] = &v[i]
 			}
 			s += size9p(elements...)
-		case time.Time, *time.Time:
-			s += size9p(uint32(0))
-		case Qid:
-			s += size9p(v.Type, v.Version, v.Path)
+		case *[]Qid:
+			s += size9p(*v)
+
 		case Dir:
 			// walk the fields of the message to get the total size. we just
 			// use the field order from the message struct. We may add tag
@@ -398,8 +403,13 @@ func size9p(vs ...interface{}) uint32 {
 			}
 
 			s += size9p(elements...) + size9p(uint16(0))
+		case *Dir:
+			s += size9p(*v)
+		case Fcall:
+			s += size9p(v.Type, v.Tag, v.Message)
+		case *Fcall:
+			s += size9p(*v)
 		case Message:
-
 			// special case twstat and rstat for size fields. See bugs in
 			// http://man.cat-v.org/plan_9/5/stat to make sense of this.
 			switch v.(type) {
@@ -421,16 +431,6 @@ func size9p(vs ...interface{}) uint32 {
 			}
 
 			s += size9p(elements...)
-		case *Qid:
-			s += size9p(*v)
-		case *Dir:
-			s += size9p(*v)
-		case Fcall:
-			s += size9p(v.Type, v.Tag, v.Message)
-		case *Fcall:
-			s += size9p(*v)
-		default:
-			s += uint32(binary.Size(v))
 		}
 	}
 
