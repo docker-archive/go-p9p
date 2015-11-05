@@ -99,7 +99,7 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 func (t *transport) handle() {
 	defer func() {
 		log.Println("exited handle loop")
-		close(t.closed)
+		t.Close()
 	}()
 	// the following variable block are protected components owned by this thread.
 	var (
@@ -113,7 +113,7 @@ func (t *transport) handle() {
 	go func() {
 		defer func() {
 			log.Println("exited read loop")
-			close(t.closed)
+			t.Close()
 		}()
 	loop:
 		for {

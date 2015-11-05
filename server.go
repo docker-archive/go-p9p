@@ -9,9 +9,15 @@ import (
 )
 
 // Serve the 9p session over the provided network connection.
-func Serve(ctx context.Context, conn net.Conn, session Session) {
-	msize, version := session.Version()
-	ch := newChannel(conn, codec9p{}, msize)
+func Serve(ctx context.Context, conn net.Conn, handler Handler) {
+
+	// TODO(stevvooe): It would be nice if the handler could declare the
+	// supported version. Before we had handler, we used the session to get
+	// the version (msize, version := session.Version()). We must decided if
+	// we want to proxy version and message size decisions all the back to the
+	// origin server or make those decisions at each link of a proxy chain.
+
+	ch := newChannel(conn, codec9p{}, DefaultMSize)
 	negctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
@@ -19,19 +25,19 @@ func Serve(ctx context.Context, conn net.Conn, session Session) {
 	// do this outside of this function and then pass in a ready made channel.
 	// We are not really ready to export the channel type yet.
 
-	if err := servernegotiate(negctx, ch, version); err != nil {
+	if err := servernegotiate(negctx, ch, DefaultVersion); err != nil {
 		// TODO(stevvooe): Need better error handling and retry support here.
 		// For now, we silently ignore the failure.
 		log.Println("error negotiating version:", err)
 		return
 	}
 
-	ctx = withVersion(ctx, version)
+	ctx = withVersion(ctx, DefaultVersion)
 
 	s := &server{
 		ctx:     ctx,
 		ch:      ch,
-		handler: &dispatcher{session: session},
+		handler: handler,
 		closed:  make(chan struct{}),
 	}
 
@@ -42,7 +48,7 @@ type server struct {
 	ctx     context.Context
 	session Session
 	ch      Channel
-	handler handler
+	handler Handler
 	closed  chan struct{}
 }
 
@@ -60,9 +66,10 @@ func (s *server) run() {
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.Println("server: shutdown")
+			log.Println("server: context done")
 			return
 		case <-s.closed:
+			log.Println("server: shutdown")
 		default:
 		}
 
@@ -75,8 +82,14 @@ func (s *server) run() {
 		log.Println("server:", "wait")
 		req := new(Fcall)
 		if err := s.ch.ReadFcall(s.ctx, req); err != nil {
+			if err, ok := err.(net.Error); ok {
+				if err.Timeout() || err.Temporary() {
+					continue
+				}
+			}
+
 			log.Println("server: error reading fcall", err)
-			continue
+			return
 		}
 
 		if _, ok := tags[req.Tag]; ok {
@@ -124,10 +137,13 @@ func (s *server) run() {
 			cancel:  cancel,
 		}
 
-		resp, err := s.handler.handle(ctx, req)
+		var resp *Fcall
+		msg, err := s.handler.Handle(ctx, req.Message)
 		if err != nil {
 			// all handler errors are forwarded as protocol errors.
 			resp = newErrorFcall(req.Tag, err)
+		} else {
+			resp = newFcall(msg)
 		}
 		resp.Tag = req.Tag
 

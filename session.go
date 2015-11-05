@@ -27,8 +27,8 @@ type Session interface {
 	Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
 	Open(ctx context.Context, fid Fid, mode Flag) (Qid, uint32, error)
 	Create(ctx context.Context, parent Fid, name string, perm uint32, mode Flag) (Qid, uint32, error)
-	Stat(context.Context, Fid) (Dir, error)
-	WStat(context.Context, Fid, Dir) error
+	Stat(ctx context.Context, fid Fid) (Dir, error)
+	WStat(ctx context.Context, fid Fid, dir Dir) error
 
 	// Version returns the supported version and msize of the session. This
 	// can be affected by negotiating or the level of support provided by the

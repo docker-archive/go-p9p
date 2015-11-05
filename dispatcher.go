@@ -1,173 +1,132 @@
 package p9pnew
 
-import (
-	"fmt"
+import "golang.org/x/net/context"
 
-	"golang.org/x/net/context"
-)
+// Handler defines an interface for 9p message handlers. A handler
+// implementation could be used to intercept calls of all types before sending
+// them to the next handler.
+type Handler interface {
+	Handle(ctx context.Context, msg Message) (Message, error)
 
-type handler interface {
-	handle(ctx context.Context, req *Fcall) (*Fcall, error)
+	// TODO(stevvooe): Right now, this interface is functianally identical to
+	// roundtripper. If we find that this is sufficient on the server-side, we
+	// may unify the types. For now, we leave them separated to differentiate
+	// between them.
 }
 
-// dispatcher routes fcalls to a Session.
-type dispatcher struct {
-	session Session
+// HandlerFunc is a convenience type for defining inline handlers.
+type HandlerFunc func(ctx context.Context, msg Message) (Message, error)
+
+func (fn HandlerFunc) Handle(ctx context.Context, msg Message) (Message, error) {
+	return fn(ctx, msg)
 }
 
-// handle responds to an fcall using the session. An error is only returned if
-// the handler cannot proceed. All session errors are returned as Rerror.
-func (d *dispatcher) handle(ctx context.Context, req *Fcall) (*Fcall, error) {
-	var resp *Fcall
-	switch req.Type {
-	case Tauth:
-		reqmsg, ok := req.Message.(MessageTauth)
-		if !ok {
-			return nil, fmt.Errorf("incorrect message for type: %v message=%v", req, req.Message)
+// Dispatch returns a handler that dispatches messages to the target session.
+// No concurrency is managed by the returned handler. It simply turns messages
+// into function calls on the session.
+func Dispatch(session Session) Handler {
+	return HandlerFunc(func(ctx context.Context, msg Message) (Message, error) {
+		switch msg := msg.(type) {
+		case MessageTauth:
+			qid, err := session.Auth(ctx, msg.Afid, msg.Uname, msg.Aname)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRauth{Qid: qid}, nil
+		case MessageTattach:
+			qid, err := session.Attach(ctx, msg.Fid, msg.Afid, msg.Uname, msg.Aname)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRattach{
+				Qid: qid,
+			}, nil
+		case MessageTwalk:
+			// TODO(stevvooe): This is one of the places where we need to manage
+			// fid allocation lifecycle. We need to reserve the fid, then, if this
+			// call succeeds, we should alloc the fid for future uses. Also need
+			// to interact correctly with concurrent clunk and the flush of this
+			// walk message.
+			qids, err := session.Walk(ctx, msg.Fid, msg.Newfid, msg.Wnames...)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRwalk{
+				Qids: qids,
+			}, nil
+		case MessageTopen:
+			qid, iounit, err := session.Open(ctx, msg.Fid, msg.Mode)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRopen{
+				Qid:    qid,
+				IOUnit: iounit,
+			}, nil
+		case MessageTcreate:
+			qid, iounit, err := session.Create(ctx, msg.Fid, msg.Name, msg.Perm, msg.Mode)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRcreate{
+				Qid:    qid,
+				IOUnit: iounit,
+			}, nil
+		case MessageTread:
+			p := make([]byte, int(msg.Count))
+			n, err := session.Read(ctx, msg.Fid, p, int64(msg.Offset))
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRread{
+				Data: p[:n],
+			}, nil
+		case MessageTwrite:
+			n, err := session.Write(ctx, msg.Fid, msg.Data, int64(msg.Offset))
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRwrite{
+				Count: uint32(n),
+			}, nil
+		case MessageTclunk:
+			// TODO(stevvooe): Manage the clunking of file descriptors based on
+			// walk and attach call progression.
+			if err := session.Clunk(ctx, msg.Fid); err != nil {
+				return nil, err
+			}
+
+			return MessageRclunk{}, nil
+		case MessageTremove:
+			if err := session.Remove(ctx, msg.Fid); err != nil {
+				return nil, err
+			}
+
+			return MessageRremove{}, nil
+		case MessageTstat:
+			dir, err := session.Stat(ctx, msg.Fid)
+			if err != nil {
+				return nil, err
+			}
+
+			return MessageRstat{
+				Stat: dir,
+			}, nil
+		case MessageTwstat:
+			if err := session.WStat(ctx, msg.Fid, msg.Stat); err != nil {
+				return nil, err
+			}
+
+			return MessageRwstat{}, nil
+		default:
+			return nil, ErrUnknownMsg
 		}
-
-		qid, err := d.session.Auth(ctx, reqmsg.Afid, reqmsg.Uname, reqmsg.Aname)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRauth{Qid: qid})
-	case Tattach:
-		reqmsg, ok := req.Message.(MessageTattach)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
-		}
-
-		qid, err := d.session.Attach(ctx, reqmsg.Fid, reqmsg.Afid, reqmsg.Uname, reqmsg.Aname)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRattach{
-			Qid: qid,
-		})
-	case Twalk:
-		reqmsg, ok := req.Message.(MessageTwalk)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%#v", req, req.Message)
-		}
-
-		// TODO(stevvooe): This is one of the places where we need to manage
-		// fid allocation lifecycle. We need to reserve the fid, then, if this
-		// call succeeds, we should alloc the fid for future uses. Also need
-		// to interact correctly with concurrent clunk and the flush of this
-		// walk message.
-		qids, err := d.session.Walk(ctx, reqmsg.Fid, reqmsg.Newfid, reqmsg.Wnames...)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRwalk{
-			Qids: qids,
-		})
-	case Topen:
-		reqmsg, ok := req.Message.(MessageTopen)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		qid, iounit, err := d.session.Open(ctx, reqmsg.Fid, reqmsg.Mode)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRopen{
-			Qid:    qid,
-			IOUnit: iounit,
-		})
-	case Tcreate:
-		reqmsg, ok := req.Message.(MessageTcreate)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		qid, iounit, err := d.session.Create(ctx, reqmsg.Fid, reqmsg.Name, reqmsg.Perm, reqmsg.Mode)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRcreate{
-			Qid:    qid,
-			IOUnit: iounit,
-		})
-
-	case Tread:
-		reqmsg, ok := req.Message.(MessageTread)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		p := make([]byte, int(reqmsg.Count))
-		n, err := d.session.Read(ctx, reqmsg.Fid, p, int64(reqmsg.Offset))
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRread{
-			Data: p[:n],
-		})
-	case Twrite:
-		reqmsg, ok := req.Message.(MessageTwrite)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		n, err := d.session.Write(ctx, reqmsg.Fid, reqmsg.Data, int64(reqmsg.Offset))
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRwrite{
-			Count: uint32(n),
-		})
-	case Tclunk:
-		reqmsg, ok := req.Message.(MessageTclunk)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		// TODO(stevvooe): Manage the clunking of file descriptors based on
-		// walk and attach call progression.
-		if err := d.session.Clunk(ctx, reqmsg.Fid); err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRclunk{})
-	case Tremove:
-		reqmsg, ok := req.Message.(MessageTremove)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		if err := d.session.Remove(ctx, reqmsg.Fid); err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRremove{})
-	case Tstat:
-		reqmsg, ok := req.Message.(MessageTstat)
-		if !ok {
-			return nil, fmt.Errorf("bad message: %v message=%v", req, req.Message)
-		}
-
-		dir, err := d.session.Stat(ctx, reqmsg.Fid)
-		if err != nil {
-			return nil, err
-		}
-
-		resp = newFcall(MessageRstat{
-			Stat: dir,
-		})
-	case Twstat:
-		panic("not implemented")
-	default:
-		return nil, ErrUnknownMsg
-	}
-
-	return resp, nil
+	})
 }

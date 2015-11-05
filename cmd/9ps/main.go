@@ -55,7 +55,7 @@ func main() {
 				return
 			}
 
-			p9pnew.Serve(ctx, conn, session)
+			p9pnew.Serve(ctx, conn, p9pnew.Dispatch(session))
 		}(c)
 	}
 }

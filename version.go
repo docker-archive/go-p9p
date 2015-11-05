@@ -68,7 +68,7 @@ func servernegotiate(ctx context.Context, ch Channel, version string) error {
 		return err
 	}
 
-	mv, ok := req.Message.(*MessageTversion)
+	mv, ok := req.Message.(MessageTversion)
 	if !ok {
 		return fmt.Errorf("expected version message: %v", mv)
 	}

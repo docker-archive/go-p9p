@@ -135,6 +135,11 @@ func main() {
 
 		ctx, _ = context.WithTimeout(commander.ctx, 5*time.Second)
 		if err := cmd(ctx, args[1:]...); err != nil {
+			if err == p9pnew.ErrClosed {
+				log.Println("connection closed, shutting down")
+				return
+			}
+
 			log.Printf("👹 %s: %v", name, err)
 		}
 	}
