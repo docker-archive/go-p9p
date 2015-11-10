@@ -2,6 +2,7 @@ package p9p
 
 import (
 	"golang.org/x/net/context"
+	"io"
 
 	"net"
 )
@@ -150,6 +151,55 @@ func (c *client) Read(ctx context.Context, fid Fid, p []byte, offset int64) (n i
 	}
 
 	return copy(p, rread.Data), nil
+}
+
+// Readdir implements Plan9 wire protocol specifics for reading Dir entries.
+func (c *client) Readdir(ctx context.Context, fid Fid) ([]*Dir, error) {
+
+	errChan := make(chan error)
+	doneChan := make(chan []*Dir)
+
+	reader, writer := io.Pipe()
+	buf := make([]byte, 256)
+	offset := int64(0)
+
+	go func() {
+		for {
+			n, err := c.Read(ctx, fid, buf, offset)
+			if err != nil {
+				errChan <- err
+				break
+			}
+			if n == 0 {
+				break
+			}
+			writer.Write(buf[:n])
+		}
+		writer.Close()
+	}()
+
+	go func() {
+		dirs := []*Dir{}
+		dir := &Dir{}
+		for {
+			err := DecodeDir(NewCodec(), reader, dir)
+			if err != nil && err != io.EOF {
+				errChan <- err
+				break
+			}
+			dirs = append(dirs, dir)
+			if err != nil {
+				doneChan <- dirs
+			}
+		}
+	}()
+
+	select {
+	case err := <-errChan:
+		return nil, err
+	case dirs := <-doneChan:
+		return dirs, nil
+	}
 }
 
 func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
