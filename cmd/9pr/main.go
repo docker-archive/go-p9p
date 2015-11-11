@@ -47,7 +47,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	csession, err := p9pnew.NewSession(ctx, conn)
+	csession, err := p9p.NewSession(ctx, conn)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -86,7 +86,7 @@ func main() {
 
 	// attach root
 	commander.nextfid = 1
-	if _, err := commander.session.Attach(commander.ctx, commander.nextfid, p9pnew.NOFID, "anyone", "/"); err != nil {
+	if _, err := commander.session.Attach(commander.ctx, commander.nextfid, p9p.NOFID, "anyone", "/"); err != nil {
 		log.Fatalln(err)
 	}
 	commander.rootfid = commander.nextfid
@@ -135,7 +135,7 @@ func main() {
 
 		ctx, _ = context.WithTimeout(commander.ctx, 5*time.Second)
 		if err := cmd(ctx, args[1:]...); err != nil {
-			if err == p9pnew.ErrClosed {
+			if err == p9p.ErrClosed {
 				log.Println("connection closed, shutting down")
 				return
 			}
@@ -147,12 +147,12 @@ func main() {
 
 type fsCommander struct {
 	ctx     context.Context
-	session p9pnew.Session
+	session p9p.Session
 	pwd     string
-	pwdfid  p9pnew.Fid
-	rootfid p9pnew.Fid
+	pwdfid  p9p.Fid
+	rootfid p9p.Fid
 
-	nextfid p9pnew.Fid
+	nextfid p9p.Fid
 
 	readline *readline.Instance
 	stdout   io.Writer
@@ -185,7 +185,7 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 		defer c.session.Clunk(ctx, targetfid)
 
-		_, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+		_, iounit, err := c.session.Open(ctx, targetfid, p9p.OREAD)
 		if err != nil {
 			return err
 		}
@@ -203,10 +203,10 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 
 		rd := bytes.NewReader(p[:n])
-		codec := p9pnew.NewCodec() // TODO(stevvooe): Need way to resolve codec based on session.
+		codec := p9p.NewCodec() // TODO(stevvooe): Need way to resolve codec based on session.
 		for {
-			var d p9pnew.Dir
-			if err := p9pnew.DecodeDir(codec, rd, &d); err != nil {
+			var d p9p.Dir
+			if err := p9p.DecodeDir(codec, rd, &d); err != nil {
 				if err == io.EOF {
 					break
 				}
@@ -316,7 +316,7 @@ func (c *fsCommander) cmdcat(ctx context.Context, args ...string) error {
 	}
 	defer c.session.Clunk(ctx, c.pwdfid)
 
-	_, iounit, err := c.session.Open(ctx, targetfid, p9pnew.OREAD)
+	_, iounit, err := c.session.Open(ctx, targetfid, p9p.OREAD)
 	if err != nil {
 		return err
 	}
