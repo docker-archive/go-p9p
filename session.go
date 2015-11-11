@@ -1,10 +1,6 @@
 package p9pnew
 
-import (
-	"net"
-
-	"golang.org/x/net/context"
-)
+import "golang.org/x/net/context"
 
 // Session provides the central abstraction for a 9p connection. Clients
 // implement sessions and servers serve sessions. Sessions can be proxied by
@@ -34,16 +30,4 @@ type Session interface {
 	// can be affected by negotiating or the level of support provided by the
 	// session implementation.
 	Version() (msize int, version string)
-}
-
-func Dial(ctx context.Context, addr string) (Session, error) {
-	c, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	// BUG(stevvooe): Session doesn't actually close connection. Dial might
-	// not be the right interface.
-
-	return NewSession(ctx, c)
 }
