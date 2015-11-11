@@ -43,25 +43,25 @@ func newTransport(ctx context.Context, ch *channel) roundTripper {
 	return t
 }
 
+// fcallRequest encompasses the request to send a message via fcall.
 type fcallRequest struct {
 	ctx      context.Context
-	fcall    *Fcall
+	message  Message
 	response chan *Fcall
 	err      chan error
 }
 
-func newFcallRequest(ctx context.Context, fcall *Fcall) *fcallRequest {
+func newFcallRequest(ctx context.Context, msg Message) *fcallRequest {
 	return &fcallRequest{
 		ctx:      ctx,
-		fcall:    fcall,
+		message:  msg,
 		response: make(chan *Fcall, 1),
 		err:      make(chan error, 1),
 	}
 }
 
 func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
-	fcall := newFcall(msg)
-	req := newFcallRequest(ctx, fcall)
+	req := newFcallRequest(ctx, msg)
 
 	// dispatch the request.
 	select {
@@ -151,34 +151,21 @@ func (t *transport) handle() {
 		log.Println("wait...")
 		select {
 		case req := <-t.requests:
-			if req.fcall.Tag == NOTAG {
-				// NOTE(stevvooe): We disallow fcalls with NOTAG to come
-				// through this path since we can't join the tagged response
-				// with the waiting caller. This is typically used for the
-				// Tversion/Rversion round trip to setup a session.
-				//
-				// It may be better to allow these through but block all
-				// requests until a notag message has a response.
-
-				req.err <- fmt.Errorf("disallowed tag through transport")
-				continue
-			}
-
 			// BUG(stevvooe): This is an awful tag allocation procedure.
 			// Replace this with something that let's us allocate tags and
 			// associate data with them, returning to them to a pool when
 			// complete. Such a system would provide a lot of information
 			// about outstanding requests.
 			tags++
-			req.fcall.Tag = tags
-			outstanding[req.fcall.Tag] = req
+			fcall := newFcall(tags, req.message)
+			outstanding[fcall.Tag] = req
 
 			// TODO(stevvooe): Consider the case of requests that never
 			// receive a response. We need to remove the fcall context from
 			// the tag map and dealloc the tag. We may also want to send a
 			// flush for the tag.
-			if err := t.ch.WriteFcall(req.ctx, req.fcall); err != nil {
-				delete(outstanding, req.fcall.Tag)
+			if err := t.ch.WriteFcall(req.ctx, fcall); err != nil {
+				delete(outstanding, fcall.Tag)
 				req.err <- err
 			}
 		case b := <-responses:
@@ -186,7 +173,11 @@ func (t *transport) handle() {
 			if !ok {
 				panic("unknown tag received")
 			}
-			delete(outstanding, req.fcall.Tag)
+
+			// BUG(stevvooe): Must detect duplicate tag and ensure that we are
+			// waking up the right caller. If a duplicate is received, the
+			// entry should not be deleted.
+			delete(outstanding, b.Tag)
 
 			req.response <- b
 

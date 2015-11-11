@@ -16,7 +16,7 @@ import (
 // until a response is received. The received value will be the version
 // implemented by the server.
 func clientnegotiate(ctx context.Context, ch Channel, version string) (string, error) {
-	req := newFcall(MessageTversion{
+	req := newFcall(NOTAG, MessageTversion{
 		MSize:   uint32(ch.MSize()),
 		Version: version,
 	})
@@ -93,7 +93,7 @@ func servernegotiate(ctx context.Context, ch Channel, version string) error {
 		respmsg.MSize = uint32(ch.MSize())
 	}
 
-	resp := newFcall(respmsg)
+	resp := newFcall(NOTAG, respmsg)
 	if err := ch.WriteFcall(ctx, resp); err != nil {
 		return err
 	}

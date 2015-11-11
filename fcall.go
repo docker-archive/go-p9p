@@ -106,9 +106,7 @@ type Fcall struct {
 	Message Message
 }
 
-func newFcall(msg Message) *Fcall {
-	var tag Tag
-
+func newFcall(tag Tag, msg Message) *Fcall {
 	switch msg.Type() {
 	case Tversion, Rversion:
 		tag = NOTAG
