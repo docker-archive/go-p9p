@@ -55,7 +55,9 @@ func main() {
 				return
 			}
 
-			p9p.Serve(ctx, conn, p9p.Dispatch(session))
+			if err := p9p.ServeConn(ctx, conn, p9p.Dispatch(session)); err != nil {
+				log.Printf("serving conn: %v", err)
+			}
 		}(c)
 	}
 }
