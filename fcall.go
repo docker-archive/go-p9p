@@ -84,7 +84,7 @@ func (fct FcallType) String() string {
 	case Rclunk:
 		return "Rclunk"
 	case Tremove:
-		return "Tremote"
+		return "Tremove"
 	case Rremove:
 		return "Rremove"
 	case Tstat:
