@@ -78,10 +78,8 @@ func (c *conn) serve() error {
 
 	log.Println("server.run()")
 	for {
-		log.Println("server:", "wait")
 		select {
 		case req := <-requests:
-			log.Println("request", req)
 			if _, ok := tags[req.Tag]; ok {
 				select {
 				case responses <- newErrorFcall(req.Tag, ErrDuptag):
@@ -149,7 +147,6 @@ func (c *conn) serve() error {
 				}(ctx, req)
 			}
 		case resp := <-completed:
-			log.Println("completed", resp)
 			// only responses that flip the tag state traverse this section.
 			active, ok := tags[resp.Tag]
 			if !ok {
