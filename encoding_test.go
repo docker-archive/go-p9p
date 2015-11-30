@@ -1,4 +1,4 @@
-package p9pnew
+package p9p
 
 import (
 	"bytes"

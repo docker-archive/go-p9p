@@ -6,7 +6,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/docker/pinata/v1/fs/p9p/new"
+	"github.com/docker/pinata/v1/pkg/p9p"
 	"golang.org/x/net/context"
 )
 
@@ -55,14 +55,16 @@ func main() {
 				return
 			}
 
-			p9pnew.Serve(ctx, conn, p9pnew.Dispatch(session))
+			if err := p9p.ServeConn(ctx, conn, p9p.Dispatch(session)); err != nil {
+				log.Printf("serving conn: %v", err)
+			}
 		}(c)
 	}
 }
 
 // newLocalSession returns a session to serve the local filesystem, restricted
 // to the provided root.
-func newLocalSession(ctx context.Context, root string) (p9pnew.Session, error) {
+func newLocalSession(ctx context.Context, root string) (p9p.Session, error) {
 	// silly, just connect to ufs for now! replace this with real code later!
 	log.Println("dialing", ":5640", "for", ctx.Value("conn"))
 	conn, err := net.Dial("tcp", ":5640")
@@ -70,7 +72,7 @@ func newLocalSession(ctx context.Context, root string) (p9pnew.Session, error) {
 		return nil, err
 	}
 
-	session, err := p9pnew.NewSession(ctx, conn)
+	session, err := p9p.NewSession(ctx, conn)
 	if err != nil {
 		return nil, err
 	}

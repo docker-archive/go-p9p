@@ -1,4 +1,4 @@
-package p9pnew
+package p9p
 
 import (
 	"bufio"
@@ -148,7 +148,7 @@ func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 	if err := ch.codec.Unmarshal(ch.rdbuf[:n], fcall); err != nil {
 		return err
 	}
-	log.Println("channel: recv", fcall)
+
 	return nil
 }
 
@@ -160,7 +160,6 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 		return ErrClosed
 	default:
 	}
-	log.Println("channel: send", fcall)
 
 	deadline, ok := ctx.Deadline()
 	if !ok {

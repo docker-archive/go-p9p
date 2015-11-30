@@ -1,9 +1,9 @@
-package p9pnew
+package p9p
 
 import (
-	"golang.org/x/net/context"
-
 	"net"
+
+	"golang.org/x/net/context"
 )
 
 type client struct {

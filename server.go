@@ -1,6 +1,7 @@
-package p9pnew
+package p9p
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"time"
@@ -8,8 +9,12 @@ import (
 	"golang.org/x/net/context"
 )
 
-// Serve the 9p session over the provided network connection.
-func Serve(ctx context.Context, conn net.Conn, handler Handler) {
+// TODO(stevvooe): Add net/http.Server-like type here to manage connections.
+// Coupled with Handler mux, we can get a very http-like experience for 9p
+// servers.
+
+// ServeConn the 9p handler over the provided network connection.
+func ServeConn(ctx context.Context, cn net.Conn, handler Handler) error {
 
 	// TODO(stevvooe): It would be nice if the handler could declare the
 	// supported version. Before we had handler, we used the session to get
@@ -17,7 +22,7 @@ func Serve(ctx context.Context, conn net.Conn, handler Handler) {
 	// we want to proxy version and message size decisions all the back to the
 	// origin server or make those decisions at each link of a proxy chain.
 
-	ch := newChannel(conn, codec9p{}, DefaultMSize)
+	ch := newChannel(cn, codec9p{}, DefaultMSize)
 	negctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 
@@ -27,29 +32,29 @@ func Serve(ctx context.Context, conn net.Conn, handler Handler) {
 
 	if err := servernegotiate(negctx, ch, DefaultVersion); err != nil {
 		// TODO(stevvooe): Need better error handling and retry support here.
-		// For now, we silently ignore the failure.
-		log.Println("error negotiating version:", err)
-		return
+		return fmt.Errorf("error negotiating version:", err)
 	}
 
 	ctx = withVersion(ctx, DefaultVersion)
 
-	s := &server{
+	c := &conn{
 		ctx:     ctx,
 		ch:      ch,
 		handler: handler,
 		closed:  make(chan struct{}),
 	}
 
-	s.run()
+	return c.serve()
 }
 
-type server struct {
+// conn plays role of session dispatch for handler in a server.
+type conn struct {
 	ctx     context.Context
 	session Session
 	ch      Channel
 	handler Handler
 	closed  chan struct{}
+	err     error // terminal error for the conn
 }
 
 // activeRequest includes information about the active request.
@@ -59,7 +64,8 @@ type activeRequest struct {
 	cancel  context.CancelFunc
 }
 
-func (s *server) run() {
+// serve messages on the connection until an error is encountered.
+func (c *conn) serve() error {
 	tags := map[Tag]*activeRequest{} // active requests
 
 	requests := make(chan *Fcall) // sync, read-limited
@@ -67,64 +73,21 @@ func (s *server) run() {
 	completed := make(chan *Fcall, 1)
 
 	// read loop
-	go func() {
-		for {
-			req := new(Fcall)
-			if err := s.ch.ReadFcall(s.ctx, req); err != nil {
-				if err, ok := err.(net.Error); ok {
-					if err.Timeout() || err.Temporary() {
-						continue
-					}
-				}
-
-				log.Println("server: error reading fcall", err)
-				return
-			}
-
-			select {
-			case requests <- req:
-			case <-s.ctx.Done():
-				log.Println("server: context done")
-				return
-			case <-s.closed:
-				log.Println("server: shutdown")
-				return
-			}
-		}
-	}()
-
-	// write loop
-	go func() {
-		for {
-			select {
-			case resp := <-responses:
-				if err := s.ch.WriteFcall(s.ctx, resp); err != nil {
-					log.Println("server: error writing fcall:", err)
-				}
-			case <-s.ctx.Done():
-				log.Println("server: context done")
-				return
-			case <-s.closed:
-				log.Println("server: shutdown")
-				return
-			}
-		}
-	}()
+	go c.read(requests)
+	go c.write(responses)
 
 	log.Println("server.run()")
 	for {
-		log.Println("server:", "wait")
 		select {
 		case req := <-requests:
-			log.Println("request", req)
 			if _, ok := tags[req.Tag]; ok {
 				select {
 				case responses <- newErrorFcall(req.Tag, ErrDuptag):
 					// Send to responses, bypass tag management.
-				case <-s.ctx.Done():
-					return
-				case <-s.closed:
-					return
+				case <-c.ctx.Done():
+					return c.ctx.Err()
+				case <-c.closed:
+					return c.err
 				}
 				continue
 			}
@@ -146,15 +109,15 @@ func (s *server) run() {
 				select {
 				case responses <- resp:
 					// bypass tag management in completed.
-				case <-s.ctx.Done():
-					return
-				case <-s.closed:
-					return
+				case <-c.ctx.Done():
+					return c.ctx.Err()
+				case <-c.closed:
+					return c.err
 				}
 			default:
 				// Allows us to session handlers to cancel processing of the fcall
 				// through context.
-				ctx, cancel := context.WithCancel(s.ctx)
+				ctx, cancel := context.WithCancel(c.ctx)
 
 				// The contents of these instances are only writable in the main
 				// server loop. The value of tag will not change.
@@ -166,7 +129,7 @@ func (s *server) run() {
 
 				go func(ctx context.Context, req *Fcall) {
 					var resp *Fcall
-					msg, err := s.handler.Handle(ctx, req.Message)
+					msg, err := c.handler.Handle(ctx, req.Message)
 					if err != nil {
 						// all handler errors are forwarded as protocol errors.
 						resp = newErrorFcall(req.Tag, err)
@@ -178,13 +141,12 @@ func (s *server) run() {
 					case completed <- resp:
 					case <-ctx.Done():
 						return
-					case <-s.closed:
+					case <-c.closed:
 						return
 					}
 				}(ctx, req)
 			}
 		case resp := <-completed:
-			log.Println("completed", resp)
 			// only responses that flip the tag state traverse this section.
 			active, ok := tags[resp.Tag]
 			if !ok {
@@ -200,12 +162,86 @@ func (s *server) run() {
 				log.Println("canceled", resp, active.ctx.Err())
 			}
 			delete(tags, resp.Tag)
-		case <-s.ctx.Done():
-			log.Println("server: context done")
-			return
-		case <-s.closed:
-			log.Println("server: shutdown")
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		case <-c.closed:
+			return c.err
+		}
+	}
+}
+
+// read takes requests off the channel and sends them on requests.
+func (c *conn) read(requests chan *Fcall) {
+	for {
+		req := new(Fcall)
+		if err := c.ch.ReadFcall(c.ctx, req); err != nil {
+			if err, ok := err.(net.Error); ok {
+				if err.Timeout() || err.Temporary() {
+					// TODO(stevvooe): A full idle timeout on the connection
+					// should be enforced here. No logging because it is quite
+					// chatty.
+					continue
+				}
+			}
+
+			c.CloseWithError(fmt.Errorf("error reading fcall: %v", err))
 			return
 		}
+
+		select {
+		case requests <- req:
+		case <-c.ctx.Done():
+			c.CloseWithError(c.ctx.Err())
+			return
+		case <-c.closed:
+			return
+		}
+	}
+}
+
+func (c *conn) write(responses chan *Fcall) {
+	for {
+		select {
+		case resp := <-responses:
+			if err := c.ch.WriteFcall(c.ctx, resp); err != nil {
+				if err, ok := err.(net.Error); ok {
+					if err.Timeout() || err.Temporary() {
+						// TODO(stevvooe): A full idle timeout on the
+						// connection should be enforced here. We log here,
+						// since this is less common.
+						log.Println("9p server: temporary error writing fcall: %v", err)
+						continue
+					}
+				}
+
+				c.CloseWithError(fmt.Errorf("error writing fcall: %v", err))
+				return
+			}
+		case <-c.ctx.Done():
+			c.CloseWithError(c.ctx.Err())
+			return
+		case <-c.closed:
+			return
+		}
+	}
+}
+
+func (c *conn) Close() error {
+	return c.CloseWithError(nil)
+}
+
+func (c *conn) CloseWithError(err error) error {
+	select {
+	case <-c.closed:
+		return c.err
+	default:
+		close(c.closed)
+		if err == nil {
+			c.err = err
+		} else {
+			c.err = ErrClosed
+		}
+
+		return c.err
 	}
 }

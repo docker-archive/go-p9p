@@ -1,4 +1,4 @@
-package p9pnew
+package p9p
 
 import "fmt"
 
@@ -84,7 +84,7 @@ func (fct FcallType) String() string {
 	case Rclunk:
 		return "Rclunk"
 	case Tremove:
-		return "Tremote"
+		return "Tremove"
 	case Rremove:
 		return "Rremove"
 	case Tstat:

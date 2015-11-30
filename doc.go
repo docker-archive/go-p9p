@@ -1,5 +1,5 @@
 /*
-Package p9pnew implements a compliant 9P2000 client and server library for use
+Package p9p implements a compliant 9P2000 client and server library for use
 in modern, production Go services. This package differentiates itself in that
 is has departed from the plan 9 implementation primitives and better follows
 idiomatic Go style.
@@ -75,4 +75,4 @@ sawdust.
 In addition, the testing is embarassingly lacking. With time, we can get full
 testing going and ensure we have confidence in the implementation.
 */
-package p9pnew
+package p9p
