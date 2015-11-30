@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/chzyer/readline"
-	"github.com/docker/pinata/v1/pkg/p9p"
+	"github.com/stevvooe/p9p"
 	"golang.org/x/net/context"
 )
 
