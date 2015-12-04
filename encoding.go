@@ -184,6 +184,19 @@ func (e *encoder) encode(vs ...interface{}) error {
 			if err := e.encode(*v); err != nil {
 				return err
 			}
+		case []Dir:
+			elements := make([]interface{}, len(v))
+			for i := range v {
+				elements[i] = &v[i]
+			}
+
+			if err := e.encode(elements...); err != nil {
+				return err
+			}
+		case *[]Dir:
+			if err := e.encode(*v); err != nil {
+				return err
+			}
 		case Fcall:
 			if err := e.encode(v.Type, v.Tag, v.Message); err != nil {
 				return err
@@ -330,6 +343,18 @@ func (d *decoder) decode(vs ...interface{}) error {
 			if err := dec.decode(elements...); err != nil {
 				return err
 			}
+		case *[]Dir:
+			*v = make([]Dir, 0)
+			for {
+				element := Dir{}
+				if err := d.decode(&element); err != nil {
+					if err == io.EOF {
+						return nil
+					}
+					return err
+				}
+				*v = append(*v, element)
+			}
 		case *Fcall:
 			if err := d.decode(&v.Type, &v.Tag); err != nil {
 				return err
@@ -442,6 +467,14 @@ func size9p(vs ...interface{}) uint32 {
 
 			s += size9p(elements...) + size9p(uint16(0))
 		case *Dir:
+			s += size9p(*v)
+		case []Dir:
+			elements := make([]interface{}, len(v))
+			for i := range elements {
+				elements[i] = &v[i]
+			}
+			s += size9p(elements...)
+		case *[]Dir:
 			s += size9p(*v)
 		case Fcall:
 			s += size9p(v.Type, v.Tag, v.Message)
