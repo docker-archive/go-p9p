@@ -148,7 +148,6 @@ func (t *transport) handle() {
 	}()
 
 	for {
-		log.Println("wait...")
 		select {
 		case req := <-t.requests:
 			// BUG(stevvooe): This is an awful tag allocation procedure.
