@@ -32,7 +32,7 @@ func ServeConn(ctx context.Context, cn net.Conn, handler Handler) error {
 
 	if err := servernegotiate(negctx, ch, DefaultVersion); err != nil {
 		// TODO(stevvooe): Need better error handling and retry support here.
-		return fmt.Errorf("error negotiating version:", err)
+		return fmt.Errorf("error negotiating version: %s", err)
 	}
 
 	ctx = withVersion(ctx, DefaultVersion)

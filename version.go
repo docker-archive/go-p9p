@@ -80,9 +80,15 @@ func servernegotiate(ctx context.Context, ch Channel, version string) error {
 	if mv.Version != version {
 		// TODO(stevvooe): Not the best place to do version handling. We need
 		// to have a way to pass supported versions into this method then have
-		// it return the actual version. For now, respond with unknown for
+		// it return the actual version. For now, respond with 9P2000 for
 		// anything that doesn't match the provided version string.
-		respmsg.Version = "unknown"
+		//
+		// version(9) says "The server may respond with the client’s
+		// version string, or a version string identifying an earlier
+		// defined protocol version. Currently, the only defined
+		// version is the 6 characters 9P2000." Therefore, it is always
+		// OK to respond with this.
+		respmsg.Version = "9P2000"
 	}
 
 	if int(mv.MSize) < ch.MSize() {
