@@ -42,7 +42,7 @@ func NewChannel(conn net.Conn, msize int) Channel {
 }
 
 const (
-	defaultRWTimeout = 1 * time.Second // default read/write timeout if not set in context
+	defaultRWTimeout = 30 * time.Second // default read/write timeout if not set in context
 )
 
 // channel provides bidirectional protocol framing for 9p over net.Conn.
