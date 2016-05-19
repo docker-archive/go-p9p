@@ -170,7 +170,12 @@ func (t *transport) handle() {
 		case b := <-responses:
 			req, ok := outstanding[b.Tag]
 			if !ok {
-				panic("unknown tag received")
+				// BUG(stevvooe): The exact handling of an unknown tag is
+				// unclear at this point. These may not necessarily fatal to
+				// the session, since they could be messages that the client no
+				// longer cares for. When we figure this out, replace this
+				// panic with something more sensible.
+				panic(fmt.Sprintf("unknown tag received: %v", b))
 			}
 
 			// BUG(stevvooe): Must detect duplicate tag and ensure that we are
