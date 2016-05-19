@@ -48,7 +48,7 @@ func (c *client) Auth(ctx context.Context, afid Fid, uname, aname string) (Qid, 
 
 	resp, err := c.transport.send(ctx, m)
 	if err != nil {
-		return Qid{}, nil
+		return Qid{}, err
 	}
 
 	rauth, ok := resp.(MessageRauth)

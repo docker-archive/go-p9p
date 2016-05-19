@@ -227,7 +227,7 @@ func readmsg(rd io.Reader, p []byte) (n int, err error) {
 func sendmsg(wr io.Writer, p []byte) error {
 	size := uint32(len(p) + 4) // message size plus 4-bytes for size.
 	if err := binary.Write(wr, binary.LittleEndian, size); err != nil {
-		return nil
+		return err
 	}
 
 	// This assume partial writes to wr aren't possible. Not sure if this
