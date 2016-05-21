@@ -1,6 +1,7 @@
 package p9p
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -95,6 +96,35 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 	}
 }
 
+func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest) (Tag, error) {
+	// Tversion can only use NOTAG, so check if we're sending a Tversion.
+	if r.message.Type() == Tversion {
+		if _, exists := m[NOTAG]; exists {
+			return 0, errors.New("NOTAG already in use")
+		}
+		return NOTAG, nil
+	}
+
+	// The tag pool is depleted if all 65536 tags are taken, or if 65535 tags
+	// are taken and NOTAG is available.
+	if len(m) > 0xFFFF {
+		return 0, errors.New("tag pool depleted")
+	} else if len(m) == 0xFFFF {
+		if _, exists := m[NOTAG]; !exists {
+			return 0, errors.New("tag pool depleted")
+		}
+	}
+
+	// Look for the first tag that doesn't exist in the map and return it.
+	for selected := Tag(0); selected < NOTAG; selected++ {
+		if _, exists := m[selected]; !exists {
+			return selected, nil
+		}
+	}
+
+	return 0, errors.New("allocateTag: unexpected error")
+}
+
 // handle takes messages off the wire and wakes up the waiting tag call.
 func (t *transport) handle() {
 	defer func() {
@@ -104,7 +134,6 @@ func (t *transport) handle() {
 	// the following variable block are protected components owned by this thread.
 	var (
 		responses = make(chan *Fcall)
-		tags      Tag
 		// outstanding provides a map of tags to outstanding requests.
 		outstanding = map[Tag]*fcallRequest{}
 	)
@@ -150,14 +179,14 @@ func (t *transport) handle() {
 	for {
 		select {
 		case req := <-t.requests:
-			// BUG(stevvooe): This is an awful tag allocation procedure.
-			// Replace this with something that let's us allocate tags and
-			// associate data with them, returning to them to a pool when
-			// complete. Such a system would provide a lot of information
-			// about outstanding requests.
-			tags++
-			fcall := newFcall(tags, req.message)
-			outstanding[fcall.Tag] = req
+			selected, err := allocateTag(req, outstanding)
+			if err != nil {
+				req.err <- err
+				continue
+			}
+
+			outstanding[selected] = req
+			fcall := newFcall(selected, req.message)
 
 			// TODO(stevvooe): Consider the case of requests that never
 			// receive a response. We need to remove the fcall context from
