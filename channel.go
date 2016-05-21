@@ -37,6 +37,8 @@ type Channel interface {
 	SetMSize(msize int)
 }
 
+// NewChannel returns a new channel to read and write Fcalls with the provided
+// connection and message size.
 func NewChannel(conn net.Conn, msize int) Channel {
 	return newChannel(conn, codec9p{}, msize)
 }
@@ -140,7 +142,7 @@ func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 	if n > len(ch.rdbuf) {
 		// TODO(stevvooe): Make this error detectable and respond with error
 		// message.
-		return fmt.Errorf("message large than buffer:", n)
+		return fmt.Errorf("message too large for buffer: %v > %v ", n, len(ch.rdbuf))
 	}
 
 	// clear out the fcall

@@ -17,6 +17,7 @@ type Handler interface {
 // HandlerFunc is a convenience type for defining inline handlers.
 type HandlerFunc func(ctx context.Context, msg Message) (Message, error)
 
+// Handle implements the requirements for the Handler interface.
 func (fn HandlerFunc) Handle(ctx context.Context, msg Message) (Message, error) {
 	return fn(ctx, msg)
 }

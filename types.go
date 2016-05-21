@@ -6,10 +6,14 @@ import (
 )
 
 const (
-	DefaultMSize   = 64 << 10
+	// DefaultMSize messages size used to establish a session.
+	DefaultMSize = 64 << 10
+
+	// DefaultVersion for this package. Currently, the only supported version.
 	DefaultVersion = "9P2000"
 )
 
+// Mode constants for use Dir.Mode.
 const (
 	DMDIR    = 0x80000000 // mode bit for directories
 	DMAPPEND = 0x40000000 // mode bit for append only files
@@ -19,6 +23,7 @@ const (
 	DMTMP    = 0x04000000 // mode bit for non-backed-up files
 
 	// 9p2000.u extensions
+
 	DMSYMLINK   = 0x02000000
 	DMDEVICE    = 0x00800000
 	DMNAMEDPIPE = 0x00200000
@@ -34,6 +39,7 @@ const (
 // Flag defines the flag type for use with open and create
 type Flag uint8
 
+// Constants to use when opening files.
 const (
 	OREAD  Flag = 0x00 // open for read
 	OWRITE      = 0x01 // write
@@ -43,9 +49,9 @@ const (
 	// PROPOSAL(stevvooe): Possible protocal extension to allow the create of
 	// symlinks. Initially, the link is created with no value. Read and write
 	// to read and set the link value.
+
 	OSYMLINK = 0x04
 
-	// or'd in
 	OTRUNC  = 0x10 // or'ed in (except for exec), truncate file first
 	OCEXEC  = 0x20 // or'ed in, close on exec
 	ORCLOSE = 0x40 // or'ed in, remove on close
@@ -54,6 +60,7 @@ const (
 // QType indicates the type of a resource within the Qid.
 type QType uint8
 
+// Constants for use in Qid to indicate resource type.
 const (
 	QTDIR    QType = 0x80 // type bit for directories
 	QTAPPEND       = 0x40 // type bit for append only files
@@ -88,14 +95,23 @@ func (qt QType) String() string {
 // Tag uniquely identifies an outstanding fcall in a 9p session.
 type Tag uint16
 
+// NOTAG is a reserved values for messages sent before establishing a session,
+// such as Tversion.
 const NOTAG Tag = ^Tag(0)
 
+// Fid defines a type to hold Fid values.
 type Fid uint32
 
+// NOFID indicates the lack of an Fid.
 const NOFID Fid = ^Fid(0)
 
+// Qid indicates the type, path and version of the resource returned by a
+// server. It is only valid for a session.
+//
+// Typically, a client maintains a mapping of Fid-Qid as Qids are returned by
+// the server.
 type Qid struct {
-	Type    QType `9p:type,1`
+	Type    QType `9p:"type,1"`
 	Version uint32
 	Path    uint64
 }
@@ -105,6 +121,8 @@ func (qid Qid) String() string {
 		qid.Type, qid.Version, qid.Path)
 }
 
+// Dir defines the structure used for expressing resources in stat/wstat and
+// when reading directories.
 type Dir struct {
 	Type uint16
 	Dev  uint32
