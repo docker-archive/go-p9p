@@ -96,7 +96,10 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 	}
 }
 
-func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest) (Tag, error) {
+// allocateTag returns a valid tag given a tag pool map. It receives a hint as
+// to where to start the tag search. It returns an error if the allocation is
+// not possible.
+func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest, hint Tag) (Tag, error) {
 	// Tversion can only use NOTAG, so check if we're sending a Tversion.
 	if r.message.Type() == Tversion {
 		if _, exists := m[NOTAG]; exists {
@@ -116,9 +119,14 @@ func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest) (Tag, error) {
 	}
 
 	// Look for the first tag that doesn't exist in the map and return it.
-	for selected := Tag(0); selected < NOTAG; selected++ {
-		if _, exists := m[selected]; !exists {
-			return selected, nil
+	for i := 0; i < 0xFFFF; i++ {
+		hint++
+		if hint == NOTAG {
+			hint = 0
+		}
+
+		if _, exists := m[hint]; !exists {
+			return hint, nil
 		}
 	}
 
@@ -136,6 +144,7 @@ func (t *transport) handle() {
 		responses = make(chan *Fcall)
 		// outstanding provides a map of tags to outstanding requests.
 		outstanding = map[Tag]*fcallRequest{}
+		selected    Tag
 	)
 
 	// loop to read messages off of the connection
@@ -179,7 +188,9 @@ func (t *transport) handle() {
 	for {
 		select {
 		case req := <-t.requests:
-			selected, err := allocateTag(req, outstanding)
+			var err error
+
+			selected, err = allocateTag(req, outstanding, selected)
 			if err != nil {
 				req.err <- err
 				continue
