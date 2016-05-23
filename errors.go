@@ -10,8 +10,8 @@ type MessageRerror struct {
 	Ename string
 }
 
+// 9p wire errors returned by Session interface methods
 var (
-	// 9p wire errors returned by Session interface methods
 	ErrBadattach    = new9pError("unknown specifier in attach")
 	ErrBadoffset    = new9pError("bad offset")
 	ErrBadcount     = new9pError("bad count")
@@ -33,6 +33,7 @@ var (
 	ErrWalknodir    = new9pError("walk in non-directory")
 
 	// extra errors not part of the normal protocol
+
 	ErrTimeout       = new9pError("fcall timeout") // returned when timing out on the fcall
 	ErrUnknownTag    = new9pError("unknown tag")
 	ErrUnknownMsg    = new9pError("unknown message")    // returned when encountering unknown message type
@@ -46,6 +47,8 @@ func new9pError(s string) error {
 	return MessageRerror{Ename: s}
 }
 
+// Type ensures that 9p errors can be transparently used as a 9p message in an
+// Fcall.
 func (MessageRerror) Type() FcallType {
 	return Rerror
 }

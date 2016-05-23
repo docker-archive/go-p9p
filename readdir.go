@@ -20,6 +20,9 @@ type Readdir struct {
 	offset int64
 }
 
+// NewReaddir returns a new Readdir to assist implementing server-side Readdir.
+// The codec will be used to decode messages with Dir entries. The provided
+// function next will be called until io.EOF is returned.
 func NewReaddir(codec Codec, next func() (Dir, error)) *Readdir {
 	return &Readdir{
 		nextfn: next,
@@ -27,6 +30,8 @@ func NewReaddir(codec Codec, next func() (Dir, error)) *Readdir {
 	}
 }
 
+// NewFixedReaddir returns a Readdir that will returned a fixed set of
+// directory entries.
 func NewFixedReaddir(codec Codec, dir []Dir) *Readdir {
 	dirs := make([]Dir, len(dir))
 	copy(dirs, dir) // make our own copy!

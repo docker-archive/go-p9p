@@ -2,8 +2,10 @@ package p9p
 
 import "fmt"
 
+// FcallType encodes the message type for the target Fcall.
 type FcallType uint8
 
+// Definitions for Fcall's used in 9P2000.
 const (
 	Tversion FcallType = iota + 100
 	Rversion
@@ -100,6 +102,8 @@ func (fct FcallType) String() string {
 	}
 }
 
+// Fcall defines the fields for sending a 9p formatted message. The type will
+// be introspected from the Message implementation.
 type Fcall struct {
 	Type    FcallType
 	Tag     Tag

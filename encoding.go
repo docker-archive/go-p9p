@@ -24,6 +24,7 @@ type Codec interface {
 	Size(v interface{}) int
 }
 
+// NewCodec returns a new, standard 9P2000 codec, ready for use.
 func NewCodec() Codec {
 	return codec9p{}
 }

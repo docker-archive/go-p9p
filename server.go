@@ -211,7 +211,7 @@ func (c *conn) write(responses chan *Fcall) {
 						// TODO(stevvooe): A full idle timeout on the
 						// connection should be enforced here. We log here,
 						// since this is less common.
-						log.Println("9p server: temporary error writing fcall: %v", err)
+						log.Printf("9p server: temporary error writing fcall: %v", err)
 						continue
 					}
 				}
