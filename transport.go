@@ -98,24 +98,11 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 
 // allocateTag returns a valid tag given a tag pool map. It receives a hint as
 // to where to start the tag search. It returns an error if the allocation is
-// not possible.
+// not possible. The provided map must not contain NOTAG as a key.
 func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest, hint Tag) (Tag, error) {
-	// Tversion can only use NOTAG, so check if we're sending a Tversion.
-	if r.message.Type() == Tversion {
-		if _, exists := m[NOTAG]; exists {
-			return 0, errors.New("NOTAG already in use")
-		}
-		return NOTAG, nil
-	}
-
-	// The tag pool is depleted if all 65536 tags are taken, or if 65535 tags
-	// are taken and NOTAG is available.
-	if len(m) > 0xFFFF {
+	// The tag pool is depleted if 65535 (0xFFFF) tags are taken.
+	if len(m) >= 0xFFFF {
 		return 0, errors.New("tag pool depleted")
-	} else if len(m) == 0xFFFF {
-		if _, exists := m[NOTAG]; !exists {
-			return 0, errors.New("tag pool depleted")
-		}
 	}
 
 	// Look for the first tag that doesn't exist in the map and return it.
