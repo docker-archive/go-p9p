@@ -31,7 +31,7 @@ type transport struct {
 
 var _ roundTripper = &transport{}
 
-func newTransport(ctx context.Context, ch *channel) roundTripper {
+func newTransport(ctx context.Context, ch Channel) roundTripper {
 	t := &transport{
 		ctx:      ctx,
 		ch:       ch,
