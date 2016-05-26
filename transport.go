@@ -1,6 +1,7 @@
 package p9p
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -30,7 +31,7 @@ type transport struct {
 
 var _ roundTripper = &transport{}
 
-func newTransport(ctx context.Context, ch *channel) roundTripper {
+func newTransport(ctx context.Context, ch Channel) roundTripper {
 	t := &transport{
 		ctx:      ctx,
 		ch:       ch,
@@ -95,6 +96,30 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 	}
 }
 
+// allocateTag returns a valid tag given a tag pool map. It receives a hint as
+// to where to start the tag search. It returns an error if the allocation is
+// not possible. The provided map must not contain NOTAG as a key.
+func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest, hint Tag) (Tag, error) {
+	// The tag pool is depleted if 65535 (0xFFFF) tags are taken.
+	if len(m) >= 0xFFFF {
+		return 0, errors.New("tag pool depleted")
+	}
+
+	// Look for the first tag that doesn't exist in the map and return it.
+	for i := 0; i < 0xFFFF; i++ {
+		hint++
+		if hint == NOTAG {
+			hint = 0
+		}
+
+		if _, exists := m[hint]; !exists {
+			return hint, nil
+		}
+	}
+
+	return 0, errors.New("allocateTag: unexpected error")
+}
+
 // handle takes messages off the wire and wakes up the waiting tag call.
 func (t *transport) handle() {
 	defer func() {
@@ -104,9 +129,9 @@ func (t *transport) handle() {
 	// the following variable block are protected components owned by this thread.
 	var (
 		responses = make(chan *Fcall)
-		tags      Tag
 		// outstanding provides a map of tags to outstanding requests.
 		outstanding = map[Tag]*fcallRequest{}
+		selected    Tag
 	)
 
 	// loop to read messages off of the connection
@@ -150,14 +175,16 @@ func (t *transport) handle() {
 	for {
 		select {
 		case req := <-t.requests:
-			// BUG(stevvooe): This is an awful tag allocation procedure.
-			// Replace this with something that let's us allocate tags and
-			// associate data with them, returning to them to a pool when
-			// complete. Such a system would provide a lot of information
-			// about outstanding requests.
-			tags++
-			fcall := newFcall(tags, req.message)
-			outstanding[fcall.Tag] = req
+			var err error
+
+			selected, err = allocateTag(req, outstanding, selected)
+			if err != nil {
+				req.err <- err
+				continue
+			}
+
+			outstanding[selected] = req
+			fcall := newFcall(selected, req.message)
 
 			// TODO(stevvooe): Consider the case of requests that never
 			// receive a response. We need to remove the fcall context from
