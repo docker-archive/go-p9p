@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -53,8 +54,10 @@ type conn struct {
 	session Session
 	ch      Channel
 	handler Handler
-	closed  chan struct{}
-	err     error // terminal error for the conn
+
+	once   sync.Once
+	closed chan struct{}
+	err    error // terminal error for the conn
 }
 
 // activeRequest includes information about the active request.
@@ -233,17 +236,14 @@ func (c *conn) Close() error {
 }
 
 func (c *conn) CloseWithError(err error) error {
-	select {
-	case <-c.closed:
-		return c.err
-	default:
-		close(c.closed)
+	c.once.Do(func() {
 		if err == nil {
-			c.err = err
-		} else {
-			c.err = ErrClosed
+			err = ErrClosed
 		}
 
-		return c.err
-	}
+		c.err = err
+		close(c.closed)
+	})
+
+	return c.err
 }
