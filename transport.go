@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
 
 	"golang.org/x/net/context"
 )
@@ -24,6 +25,9 @@ type transport struct {
 	ctx      context.Context
 	ch       Channel
 	requests chan *fcallRequest
+
+	shutdown chan struct{}
+	once     sync.Once // protect closure of shutdown
 	closed   chan struct{}
 
 	tags uint16
@@ -36,6 +40,7 @@ func newTransport(ctx context.Context, ch Channel) roundTripper {
 		ctx:      ctx,
 		ch:       ch,
 		requests: make(chan *fcallRequest),
+		shutdown: make(chan struct{}),
 		closed:   make(chan struct{}),
 	}
 
@@ -124,8 +129,9 @@ func allocateTag(r *fcallRequest, m map[Tag]*fcallRequest, hint Tag) (Tag, error
 func (t *transport) handle() {
 	defer func() {
 		log.Println("exited handle loop")
-		t.Close()
+		close(t.closed)
 	}()
+
 	// the following variable block are protected components owned by this thread.
 	var (
 		responses = make(chan *Fcall)
@@ -138,7 +144,7 @@ func (t *transport) handle() {
 	go func() {
 		defer func() {
 			log.Println("exited read loop")
-			t.Close()
+			t.close() // single main loop
 		}()
 	loop:
 		for {
@@ -156,13 +162,11 @@ func (t *transport) handle() {
 				}
 
 				log.Println("fatal error reading msg:", err)
-				t.Close()
 				return
 			}
 
 			select {
 			case <-t.ctx.Done():
-				log.Println("ctx done")
 				return
 			case <-t.closed:
 				log.Println("transport closed")
@@ -213,9 +217,9 @@ func (t *transport) handle() {
 			req.response <- b
 
 			// TODO(stevvooe): Reclaim tag id.
-		case <-t.ctx.Done():
+		case <-t.shutdown:
 			return
-		case <-t.closed:
+		case <-t.ctx.Done():
 			return
 		}
 	}
@@ -228,14 +232,19 @@ func (t *transport) flush(ctx context.Context, tag Tag) error {
 }
 
 func (t *transport) Close() error {
+	t.close()
+
 	select {
 	case <-t.closed:
-		return ErrClosed
+		return nil
 	case <-t.ctx.Done():
 		return t.ctx.Err()
-	default:
-		close(t.closed)
 	}
+}
 
-	return nil
+// close starts the shutdown process.
+func (t *transport) close() {
+	t.once.Do(func() {
+		close(t.shutdown)
+	})
 }
