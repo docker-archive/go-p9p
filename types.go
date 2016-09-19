@@ -42,19 +42,19 @@ type Flag uint8
 // Constants to use when opening files.
 const (
 	OREAD  Flag = 0x00 // open for read
-	OWRITE      = 0x01 // write
-	ORDWR       = 0x02 // read and write
-	OEXEC       = 0x03 // execute, == read but check execute permission
+	OWRITE Flag = 0x01 // write
+	ORDWR  Flag = 0x02 // read and write
+	OEXEC  Flag = 0x03 // execute, == read but check execute permission
 
 	// PROPOSAL(stevvooe): Possible protocal extension to allow the create of
 	// symlinks. Initially, the link is created with no value. Read and write
 	// to read and set the link value.
 
-	OSYMLINK = 0x04
+	OSYMLINK Flag = 0x04
 
-	OTRUNC  = 0x10 // or'ed in (except for exec), truncate file first
-	OCEXEC  = 0x20 // or'ed in, close on exec
-	ORCLOSE = 0x40 // or'ed in, remove on close
+	OTRUNC  Flag = 0x10 // or'ed in (except for exec), truncate file first
+	OCEXEC  Flag = 0x20 // or'ed in, close on exec
+	ORCLOSE Flag = 0x40 // or'ed in, remove on close
 )
 
 // QType indicates the type of a resource within the Qid.
@@ -63,12 +63,12 @@ type QType uint8
 // Constants for use in Qid to indicate resource type.
 const (
 	QTDIR    QType = 0x80 // type bit for directories
-	QTAPPEND       = 0x40 // type bit for append only files
-	QTEXCL         = 0x20 // type bit for exclusive use files
-	QTMOUNT        = 0x10 // type bit for mounted channel
-	QTAUTH         = 0x08 // type bit for authentication file
-	QTTMP          = 0x04 // type bit for not-backed-up file
-	QTFILE         = 0x00 // plain file
+	QTAPPEND QType = 0x40 // type bit for append only files
+	QTEXCL   QType = 0x20 // type bit for exclusive use files
+	QTMOUNT  QType = 0x10 // type bit for mounted channel
+	QTAUTH   QType = 0x08 // type bit for authentication file
+	QTTMP    QType = 0x04 // type bit for not-backed-up file
+	QTFILE   QType = 0x00 // plain file
 )
 
 func (qt QType) String() string {
