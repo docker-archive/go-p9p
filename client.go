@@ -135,39 +135,70 @@ func (c *client) Walk(ctx context.Context, fid Fid, newfid Fid, names ...string)
 }
 
 func (c *client) Read(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
-	resp, err := c.transport.send(ctx, MessageTread{
-		Fid:    fid,
-		Offset: uint64(offset),
-		Count:  uint32(len(p)),
-	})
-	if err != nil {
-		return 0, err
+	// size[4] Rread tag[2] count[4] data[count]
+	const rreadMessageEnvelopeSize int = 4 + 1 + 2 + 4
+
+	maxChunkSize := c.msize - rreadMessageEnvelopeSize
+	totalRead := 0
+
+	for {
+		remaining := len(p) - totalRead
+		toRead := min(maxChunkSize, remaining)
+		resp, err := c.transport.send(ctx, MessageTread{
+			Fid:    fid,
+			Offset: uint64(offset + int64(totalRead)),
+			Count:  uint32(toRead),
+		})
+		if err != nil {
+			return 0, err
+		}
+
+		rread, ok := resp.(MessageRread)
+		if !ok {
+			return 0, ErrUnexpectedMsg
+		}
+		copy(p[totalRead:], rread.Data)
+
+		totalRead += len(rread.Data)
+
+		// read end or eof
+		if totalRead == len(p) || toRead > len(rread.Data) {
+			break
+		}
 	}
 
-	rread, ok := resp.(MessageRread)
-	if !ok {
-		return 0, ErrUnexpectedMsg
-	}
-
-	return copy(p, rread.Data), nil
+	return totalRead, nil
 }
 
 func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
-	resp, err := c.transport.send(ctx, MessageTwrite{
-		Fid:    fid,
-		Offset: uint64(offset),
-		Data:   p,
-	})
-	if err != nil {
-		return 0, err
+	// size[4] Twrite tag[2] fid[4] offset[8] count[4] data[count]
+	const twriteMessageEnvelopeSize int = 4 + 1 + 2 + 4 + 8 + 4
+	maxChunkSize := c.msize - twriteMessageEnvelopeSize
+	totalWritten := 0
+	for {
+		remaining := len(p) - totalWritten
+		toWrite := min(maxChunkSize, remaining)
+		resp, err := c.transport.send(ctx, MessageTwrite{
+			Fid:    fid,
+			Offset: uint64(offset + int64(totalWritten)),
+			Data:   p[totalWritten : totalWritten+toWrite],
+		})
+		if err != nil {
+			return 0, err
+		}
+
+		rwrite, ok := resp.(MessageRwrite)
+		if !ok {
+			return 0, ErrUnexpectedMsg
+		}
+
+		totalWritten += int(rwrite.Count)
+		if totalWritten == len(p) {
+			break
+		}
 	}
 
-	rwrite, ok := resp.(MessageRwrite)
-	if !ok {
-		return 0, ErrUnexpectedMsg
-	}
-
-	return int(rwrite.Count), nil
+	return int(totalWritten), nil
 }
 
 func (c *client) Open(ctx context.Context, fid Fid, mode Flag) (Qid, uint32, error) {
@@ -235,4 +266,11 @@ func (c *client) WStat(ctx context.Context, fid Fid, dir Dir) error {
 	}
 
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -38,7 +38,8 @@ func clientnegotiate(ctx context.Context, ch Channel, version string) (string, e
 			return "", fmt.Errorf("unsupported server version: %v", version)
 		}
 
-		if int(v.MSize) > ch.MSize() {
+		if int(v.MSize) < ch.MSize() {
+			// msize negociation rule is simple : the lowest msize from either the client or the server rules
 			// upgrade msize if server differs.
 			ch.SetMSize(int(v.MSize))
 		}
