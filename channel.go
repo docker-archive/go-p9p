@@ -172,6 +172,23 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
 	}
 
+	switch m := fcall.Message.(type) {
+	// truncate TWriteMessage according to msize
+	case MessageTwrite:
+		messageSizeWithSizePrefix := ch.codec.Size(fcall) + 4
+		overflow := messageSizeWithSizePrefix - ch.MSize()
+		if overflow > 0 {
+			fcall.Message = MessageTwrite{Offset: m.Offset, Fid: m.Fid, Data: m.Data[:len(m.Data)-overflow]}
+		}
+	// partial read according to msize
+	case MessageTread:
+		emptyReadResponseWithSizePrefix := ch.codec.Size(newFcall(Tag(0), MessageRread{})) + 4
+		overflow := (emptyReadResponseWithSizePrefix + int(m.Count)) - ch.MSize()
+		if overflow > 0 {
+			fcall.Message = MessageTread{Offset: m.Offset, Fid: m.Fid, Count: m.Count - uint32(overflow)}
+		}
+	}
+
 	p, err := ch.codec.Marshal(fcall)
 	if err != nil {
 		return err
