@@ -1,8 +1,9 @@
 package p9p
 
 import (
-	"context"
 	"io"
+
+	"golang.org/x/net/context"
 )
 
 type fileWriter struct {
