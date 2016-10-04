@@ -31,30 +31,3 @@ type Session interface {
 	// session implementation.
 	Version() (msize int, version string)
 }
-
-// WriteFull writes the whole p slice to the specified fid
-func WriteFull(s Session, ctx context.Context, fid Fid, p []byte, offset int64) error {
-	for len(p) > 0 {
-		written, err := s.Write(ctx, fid, p, offset)
-		if err != nil {
-			return err
-		}
-		p = p[written:]
-		offset += int64(written)
-	}
-	return nil
-}
-
-// ReadFull reads the whole file and returns it in a slice
-func ReadFull(s Session, ctx context.Context, fid Fid, offset int64) (p []byte, err error) {
-	var buf [4096]byte
-	for {
-		var read int
-		read, err = s.Read(ctx, fid, buf[:], offset)
-		if err != nil || read == 0 { // error or eof
-			return
-		}
-		p = append(p, buf[:read]...)
-		offset += int64(read)
-	}
-}

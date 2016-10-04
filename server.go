@@ -23,7 +23,7 @@ func ServeConn(ctx context.Context, cn net.Conn, handler Handler) error {
 	// we want to proxy version and message size decisions all the back to the
 	// origin server or make those decisions at each link of a proxy chain.
 
-	ch := newChannel(cn, codec9p{}, DefaultMSize)
+	ch := newChannelWithDefaultCodec(cn, DefaultMSize)
 	negctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
 

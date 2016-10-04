@@ -40,7 +40,7 @@ type Channel interface {
 // NewChannel returns a new channel to read and write Fcalls with the provided
 // connection and message size.
 func NewChannel(conn net.Conn, msize int) Channel {
-	return newChannel(conn, codec9p{}, msize)
+	return newChannelWithDefaultCodec(conn, msize)
 }
 
 const (
@@ -92,6 +92,9 @@ func newChannel(conn net.Conn, codec Codec, msize int) *channel {
 		rdbuf:  make([]byte, msize),
 	}
 }
+func newChannelWithDefaultCodec(conn net.Conn, msize int) *channel {
+	return newChannel(conn, NewCodec(msize-4), msize) // msize minus the size of the "Size" prefix
+}
 
 func (ch *channel) MSize() int {
 	return ch.msize
@@ -104,6 +107,7 @@ func (ch *channel) SetMSize(msize int) {
 	// Proceed assuming that original size is sufficient.
 
 	ch.msize = msize
+	ch.codec.ResetMaxMarshalledSize(msize - 4) // msize minus size of the "Size prefix"
 	if msize < len(ch.rdbuf) {
 		// just change the cap
 		ch.rdbuf = ch.rdbuf[:msize]
@@ -170,23 +174,6 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 
 	if err := ch.conn.SetWriteDeadline(deadline); err != nil {
 		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
-	}
-
-	switch m := fcall.Message.(type) {
-	// truncate TWriteMessage according to msize
-	case MessageTwrite:
-		messageSizeWithSizePrefix := ch.codec.Size(fcall) + 4
-		overflow := messageSizeWithSizePrefix - ch.MSize()
-		if overflow > 0 {
-			fcall.Message = MessageTwrite{Offset: m.Offset, Fid: m.Fid, Data: m.Data[:len(m.Data)-overflow]}
-		}
-	// partial read according to msize
-	case MessageTread:
-		emptyReadResponseWithSizePrefix := ch.codec.Size(newFcall(Tag(0), MessageRread{})) + 4
-		overflow := (emptyReadResponseWithSizePrefix + int(m.Count)) - ch.MSize()
-		if overflow > 0 {
-			fcall.Message = MessageTread{Offset: m.Offset, Fid: m.Fid, Count: m.Count - uint32(overflow)}
-		}
 	}
 
 	p, err := ch.codec.Marshal(fcall)
