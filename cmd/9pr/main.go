@@ -203,7 +203,7 @@ func (c *fsCommander) cmdls(ctx context.Context, args ...string) error {
 		}
 
 		rd := bytes.NewReader(p[:n])
-		codec := p9p.NewCodec() // TODO(stevvooe): Need way to resolve codec based on session.
+		codec := c.session.Codec()
 		for {
 			var d p9p.Dir
 			if err := p9p.DecodeDir(codec, rd, &d); err != nil {

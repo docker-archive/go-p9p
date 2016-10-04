@@ -22,23 +22,28 @@ type Codec interface {
 
 	// Size returns the encoded size for the target of v.
 	Size(v interface{}) int
+
+	// Reset the maximum marshalled message size (without "Size" prefix)
+	ResetMaxMarshalledSize(maxMarshalledSize int)
 }
 
 // NewCodec returns a new, standard 9P2000 codec, ready for use.
-func NewCodec() Codec {
-	return codec9p{}
+func NewCodec(maxMarshalledSize int) Codec {
+	return &codec9p{maxMarshalledSize}
 }
 
-type codec9p struct{}
+type codec9p struct {
+	maxMarshalledSize int // the maximum size supported by the channel without the "Size" prefix
+}
 
-func (c codec9p) Unmarshal(data []byte, v interface{}) error {
+func (c *codec9p) Unmarshal(data []byte, v interface{}) error {
 	dec := &decoder{bytes.NewReader(data)}
 	return dec.decode(v)
 }
 
-func (c codec9p) Marshal(v interface{}) ([]byte, error) {
+func (c *codec9p) Marshal(v interface{}) ([]byte, error) {
 	var b bytes.Buffer
-	enc := &encoder{&b}
+	enc := &encoder{&b, c.maxMarshalledSize}
 
 	if err := enc.encode(v); err != nil {
 		return nil, err
@@ -47,8 +52,12 @@ func (c codec9p) Marshal(v interface{}) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (c codec9p) Size(v interface{}) int {
+func (c *codec9p) Size(v interface{}) int {
 	return int(size9p(v))
+}
+
+func (c *codec9p) ResetMaxMarshalledSize(maxMarshalledSize int) {
+	c.maxMarshalledSize = maxMarshalledSize
 }
 
 // DecodeDir decodes a directory entry from rd using the provided codec.
@@ -83,7 +92,8 @@ func EncodeDir(codec Codec, wr io.Writer, d *Dir) error {
 }
 
 type encoder struct {
-	wr io.Writer
+	wr      io.Writer
+	maxSize int
 }
 
 func (e *encoder) encode(vs ...interface{}) error {
@@ -199,6 +209,7 @@ func (e *encoder) encode(vs ...interface{}) error {
 				return err
 			}
 		case Fcall:
+			e.rewriteMessageForMaxSize(&v)
 			if err := e.encode(v.Type, v.Tag, v.Message); err != nil {
 				return err
 			}
@@ -230,6 +241,33 @@ func (e *encoder) encode(vs ...interface{}) error {
 	}
 
 	return nil
+}
+
+var emptyReadSampleResponse = Fcall{Message: MessageRread{}}
+
+func (e *encoder) rewriteMessageForMaxSize(fcall *Fcall) {
+
+	switch m := fcall.Message.(type) {
+	case MessageTwrite:
+		// truncate the request so it fits within max size bytes
+		originalSize := int(size9p(fcall))
+		if originalSize <= e.maxSize {
+			return
+		}
+		overflow := originalSize - e.maxSize
+		truncated := m.Data[:len(m.Data)-overflow]
+		fcall.Message = MessageTwrite{Fid: m.Fid, Offset: m.Offset, Data: truncated}
+	case MessageTread:
+		// more tricky, calculate the expected response size, and modify the requested byte count such that the response will fit in max size bytes
+		emptyResponseSize := int(size9p(emptyReadSampleResponse)) // this is the constant part of the response size
+		expectedResponseSize := emptyResponseSize + int(m.Count)
+		if expectedResponseSize <= e.maxSize {
+			return
+		}
+		overflow := expectedResponseSize - e.maxSize
+		truncated := m.Count - uint32(overflow)
+		fcall.Message = MessageTread{Count: truncated, Fid: m.Fid, Offset: m.Offset}
+	}
 }
 
 type decoder struct {

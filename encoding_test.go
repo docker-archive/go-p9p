@@ -9,7 +9,7 @@ import (
 )
 
 func TestEncodeDecode(t *testing.T) {
-	codec := NewCodec()
+	codec := NewCodec(100 * 1024)
 	for _, testcase := range []struct {
 		description string
 		target      interface{}

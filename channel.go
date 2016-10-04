@@ -35,12 +35,15 @@ type Channel interface {
 	// SetMSize sets the maximum message size for the channel. This must never
 	// be called currently with ReadFcall or WriteFcall.
 	SetMSize(msize int)
+
+	// Codec gets the codec used to for calls marshalling
+	Codec() Codec
 }
 
 // NewChannel returns a new channel to read and write Fcalls with the provided
 // connection and message size.
 func NewChannel(conn net.Conn, msize int) Channel {
-	return newChannel(conn, codec9p{}, msize)
+	return newChannelWithDefaultCodec(conn, msize)
 }
 
 const (
@@ -92,6 +95,9 @@ func newChannel(conn net.Conn, codec Codec, msize int) *channel {
 		rdbuf:  make([]byte, msize),
 	}
 }
+func newChannelWithDefaultCodec(conn net.Conn, msize int) *channel {
+	return newChannel(conn, NewCodec(msize-4), msize) // msize minus the size of the "Size" prefix
+}
 
 func (ch *channel) MSize() int {
 	return ch.msize
@@ -104,6 +110,7 @@ func (ch *channel) SetMSize(msize int) {
 	// Proceed assuming that original size is sufficient.
 
 	ch.msize = msize
+	ch.codec.ResetMaxMarshalledSize(msize - 4) // msize minus size of the "Size prefix"
 	if msize < len(ch.rdbuf) {
 		// just change the cap
 		ch.rdbuf = ch.rdbuf[:msize]
@@ -182,6 +189,10 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	}
 
 	return ch.bwr.Flush()
+}
+
+func (ch *channel) Codec() Codec {
+	return ch.codec
 }
 
 // readmsg reads a 9p message into p from rd, ensuring that all bytes are

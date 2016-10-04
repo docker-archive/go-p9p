@@ -17,7 +17,7 @@ type client struct {
 // a context for out of bad messages, such as flushes, that may be sent by the
 // session. The session can effectively shutdown with this context.
 func NewSession(ctx context.Context, conn net.Conn) (Session, error) {
-	ch := newChannel(conn, codec9p{}, DefaultMSize) // sets msize, effectively.
+	ch := newChannelWithDefaultCodec(conn, DefaultMSize)
 
 	// negotiate the protocol version
 	version, err := clientnegotiate(ctx, ch, DefaultVersion)
@@ -235,4 +235,8 @@ func (c *client) WStat(ctx context.Context, fid Fid, dir Dir) error {
 	}
 
 	return nil
+}
+
+func (c *client) Codec() Codec {
+	return c.transport.codec()
 }
