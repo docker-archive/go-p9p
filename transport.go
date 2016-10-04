@@ -16,6 +16,7 @@ import (
 // serialization.
 type roundTripper interface {
 	send(ctx context.Context, msg Message) (Message, error)
+	codec() Codec
 }
 
 // transport plays the role of being a client channel manager. It multiplexes
@@ -99,6 +100,10 @@ func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 
 		return resp.Message, nil
 	}
+}
+
+func (t *transport) codec() Codec {
+	return t.ch.Codec()
 }
 
 // allocateTag returns a valid tag given a tag pool map. It receives a hint as

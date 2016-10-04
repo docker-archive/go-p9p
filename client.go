@@ -236,3 +236,7 @@ func (c *client) WStat(ctx context.Context, fid Fid, dir Dir) error {
 
 	return nil
 }
+
+func (c *client) Codec() Codec {
+	return c.transport.codec()
+}

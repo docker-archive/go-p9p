@@ -30,4 +30,5 @@ type Session interface {
 	// can be affected by negotiating or the level of support provided by the
 	// session implementation.
 	Version() (msize int, version string)
+	Codec() Codec
 }

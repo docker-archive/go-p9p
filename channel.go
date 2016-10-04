@@ -35,6 +35,9 @@ type Channel interface {
 	// SetMSize sets the maximum message size for the channel. This must never
 	// be called currently with ReadFcall or WriteFcall.
 	SetMSize(msize int)
+
+	// Codec gets the codec used to for calls marshalling
+	Codec() Codec
 }
 
 // NewChannel returns a new channel to read and write Fcalls with the provided
@@ -186,6 +189,10 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	}
 
 	return ch.bwr.Flush()
+}
+
+func (ch *channel) Codec() Codec {
+	return ch.codec
 }
 
 // readmsg reads a 9p message into p from rd, ensuring that all bytes are
