@@ -16,6 +16,7 @@ import (
 // serialization.
 type roundTripper interface {
 	send(ctx context.Context, msg Message) (Message, error)
+	channel() Channel
 }
 
 // transport plays the role of being a client channel manager. It multiplexes
@@ -65,7 +66,9 @@ func newFcallRequest(ctx context.Context, msg Message) *fcallRequest {
 		err:      make(chan error, 1),
 	}
 }
-
+func (t *transport) channel() Channel {
+	return t.ch
+}
 func (t *transport) send(ctx context.Context, msg Message) (Message, error) {
 	req := newFcallRequest(ctx, msg)
 
