@@ -1,6 +1,7 @@
 package p9p
 
 import (
+	"errors"
 	"net"
 
 	"golang.org/x/net/context"
@@ -12,6 +13,9 @@ type client struct {
 	ctx       context.Context
 	transport roundTripper
 }
+
+// ErrOverflow occurs when the requested length of a read or write operation is larger than supported by the protocol
+var ErrOverflow = errors.New("The requested size is larger than supported")
 
 // NewSession returns a session using the connection. The Context ctx provides
 // a context for out of bad messages, such as flushes, that may be sent by the
@@ -133,8 +137,17 @@ func (c *client) Walk(ctx context.Context, fid Fid, newfid Fid, names ...string)
 
 	return rwalk.Qids, nil
 }
-
+func (c *client) MaxReadSize() int {
+	return c.transport.channel().MaxReadSize()
+}
+func (c *client) MaxWriteSize() int {
+	return c.transport.channel().MaxWriteSize()
+}
 func (c *client) Read(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
+	if len(p) > c.transport.channel().MaxReadSize() {
+		err = ErrOverflow
+		return
+	}
 	resp, err := c.transport.send(ctx, MessageTread{
 		Fid:    fid,
 		Offset: uint64(offset),
@@ -153,6 +166,10 @@ func (c *client) Read(ctx context.Context, fid Fid, p []byte, offset int64) (n i
 }
 
 func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
+	if len(p) > c.transport.channel().MaxWriteSize() {
+		err = ErrOverflow
+		return
+	}
 	resp, err := c.transport.send(ctx, MessageTwrite{
 		Fid:    fid,
 		Offset: uint64(offset),

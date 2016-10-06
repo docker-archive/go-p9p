@@ -19,12 +19,17 @@ type Session interface {
 	Clunk(ctx context.Context, fid Fid) error
 	Remove(ctx context.Context, fid Fid) error
 	Walk(ctx context.Context, fid Fid, newfid Fid, names ...string) ([]Qid, error)
+
+	// Read reads bytes from the file pointed by fid. must have len(p) <= MaxReadSize() overwise err is ErrOverflow
 	Read(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
+	// Write writes bytes to the specified file. must have len(p) <= MaxWriteSize() overwise err is ErrOverflow
 	Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error)
 	Open(ctx context.Context, fid Fid, mode Flag) (Qid, uint32, error)
 	Create(ctx context.Context, parent Fid, name string, perm uint32, mode Flag) (Qid, uint32, error)
 	Stat(ctx context.Context, fid Fid) (Dir, error)
 	WStat(ctx context.Context, fid Fid, dir Dir) error
+	MaxReadSize() int
+	MaxWriteSize() int
 
 	// Version returns the supported version and msize of the session. This
 	// can be affected by negotiating or the level of support provided by the

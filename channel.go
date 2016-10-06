@@ -35,6 +35,12 @@ type Channel interface {
 	// SetMSize sets the maximum message size for the channel. This must never
 	// be called currently with ReadFcall or WriteFcall.
 	SetMSize(msize int)
+
+	// MaxReadSize returns the maximum size supported for a Read call
+	MaxReadSize() int
+
+	// MaxWriteSize returns the maximum size supported for a Write call
+	MaxWriteSize() int
 }
 
 // NewChannel returns a new channel to read and write Fcalls with the provided
@@ -72,24 +78,30 @@ const (
 // new session. The next version message would then prepare the session
 // without leaking any Fid's.
 type channel struct {
-	conn   net.Conn
-	codec  Codec
-	brd    *bufio.Reader
-	bwr    *bufio.Writer
-	closed chan struct{}
-	msize  int
-	rdbuf  []byte
+	conn              net.Conn
+	codec             Codec
+	brd               *bufio.Reader
+	bwr               *bufio.Writer
+	closed            chan struct{}
+	msize             int
+	rdbuf             []byte
+	sizeOfEmptyTWrite int
+	sizeOfEmptyRRead  int
 }
 
 func newChannel(conn net.Conn, codec Codec, msize int) *channel {
+	sizeOfEmptyTWrite := codec.Size(newFcall(Tag(0), MessageTwrite{})) + 4 // size of Size prefix
+	sizeOfEmptyRRead := codec.Size(newFcall(Tag(0), MessageRread{})) + 4
 	return &channel{
-		conn:   conn,
-		codec:  codec,
-		brd:    bufio.NewReaderSize(conn, msize), // msize may not be optimal buffer size
-		bwr:    bufio.NewWriterSize(conn, msize),
-		closed: make(chan struct{}),
-		msize:  msize,
-		rdbuf:  make([]byte, msize),
+		conn:              conn,
+		codec:             codec,
+		brd:               bufio.NewReaderSize(conn, msize), // msize may not be optimal buffer size
+		bwr:               bufio.NewWriterSize(conn, msize),
+		closed:            make(chan struct{}),
+		msize:             msize,
+		rdbuf:             make([]byte, msize),
+		sizeOfEmptyRRead:  sizeOfEmptyRRead,
+		sizeOfEmptyTWrite: sizeOfEmptyTWrite,
 	}
 }
 
@@ -182,6 +194,14 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	}
 
 	return ch.bwr.Flush()
+}
+
+func (ch *channel) MaxReadSize() int {
+	return ch.msize - ch.sizeOfEmptyRRead
+}
+
+func (ch *channel) MaxWriteSize() int {
+	return ch.msize - ch.sizeOfEmptyTWrite
 }
 
 // readmsg reads a 9p message into p from rd, ensuring that all bytes are
