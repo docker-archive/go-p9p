@@ -25,12 +25,8 @@ func (r *fileReader) Read(p []byte) (n int, err error) {
 	n, err = r.session.Read(r.ctx, r.fid, p, r.offset)
 	r.offset += int64(n)
 	// additional error handling for compliying with io.Reader
-	if n == 0 && (err == nil) {
+	if n < len(p) && err == nil {
 		err = io.EOF
-		return
-	}
-	if n < len(p) && err == nil || err == io.EOF {
-		err = io.ErrUnexpectedEOF
 	}
 	return
 }
