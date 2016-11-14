@@ -3,7 +3,7 @@ package p9p
 import (
 	"net"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 type client struct {

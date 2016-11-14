@@ -10,7 +10,7 @@ import (
 	"net"
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // Channel defines the operations necessary to implement a 9p message channel

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // TODO(stevvooe): Add net/http.Server-like type here to manage connections.

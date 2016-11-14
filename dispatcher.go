@@ -1,6 +1,6 @@
 package p9p
 
-import "golang.org/x/net/context"
+import "context"
 
 // Handler defines an interface for 9p message handlers. A handler
 // implementation could be used to intercept calls of all types before sending
