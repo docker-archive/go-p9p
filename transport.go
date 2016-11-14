@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // roundTripper manages the request and response from the client-side. A

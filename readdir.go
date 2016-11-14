@@ -3,7 +3,7 @@ package p9p
 import (
 	"io"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // ReaddirAll reads all the directory entries for the resource fid.

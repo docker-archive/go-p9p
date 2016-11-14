@@ -3,7 +3,7 @@ package p9p
 import (
 	"fmt"
 
-	"golang.org/x/net/context"
+	"context"
 )
 
 // NOTE(stevvooe): This file contains functions for negotiating version on the

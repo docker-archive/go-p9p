@@ -1,6 +1,6 @@
 package p9p
 
-import "golang.org/x/net/context"
+import "context"
 
 // Session provides the central abstraction for a 9p connection. Clients
 // implement sessions and servers serve sessions. Sessions can be proxied by
