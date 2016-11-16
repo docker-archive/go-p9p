@@ -132,6 +132,9 @@ func (c *conn) serve() error {
 				}
 
 				go func(ctx context.Context, req *Fcall) {
+					// TODO(stevvooe): Re-write incoming Treads so that handler
+					// can always respond with a message of the correct msize.
+
 					var resp *Fcall
 					msg, err := c.handler.Handle(ctx, req.Message)
 					if err != nil {
@@ -208,6 +211,11 @@ func (c *conn) write(responses chan *Fcall) {
 	for {
 		select {
 		case resp := <-responses:
+			// TODO(stevvooe): Correctly protect againt overflowing msize from
+			// handler. This can be done above, in the main message handler
+			// loop, by adjusting incoming Tread calls to have a Count that
+			// won't overflow the msize.
+
 			if err := c.ch.WriteFcall(c.ctx, resp); err != nil {
 				if err, ok := err.(net.Error); ok {
 					if err.Timeout() || err.Temporary() {

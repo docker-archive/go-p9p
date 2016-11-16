@@ -2,15 +2,19 @@ package p9p
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"time"
+)
 
-	"context"
+const (
+	// channelMessageHeaderSize is the overhead for sending the size of a
+	// message on the wire.
+	channelMessageHeaderSize = 4
 )
 
 // Channel defines the operations necessary to implement a 9p message channel
@@ -114,6 +118,9 @@ func (ch *channel) SetMSize(msize int) {
 }
 
 // ReadFcall reads the next message from the channel into fcall.
+//
+// If the incoming message overflows the msize, Overflow(err) will return
+// nonzero with the number of bytes overflowed.
 func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 	select {
 	case <-ctx.Done():
@@ -140,9 +147,7 @@ func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 	}
 
 	if n > len(ch.rdbuf) {
-		// TODO(stevvooe): Make this error detectable and respond with error
-		// message.
-		return fmt.Errorf("message too large for buffer: %v > %v ", n, len(ch.rdbuf))
+		return overflowErr{size: n - len(ch.rdbuf)}
 	}
 
 	// clear out the fcall
@@ -151,9 +156,19 @@ func (ch *channel) ReadFcall(ctx context.Context, fcall *Fcall) error {
 		return err
 	}
 
+	if err := ch.maybeTruncate(fcall); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+// WriteFcall writes the message to the connection.
+//
+// If a message destined for the wire will overflow MSize, an Overflow error
+// may be returned. For Twrite calls, the buffer will simply be truncated to
+// the optimal msize, with the caller detecting this condition with
+// Rwrite.Count.
 func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	select {
 	case <-ctx.Done():
@@ -172,6 +187,10 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 		log.Printf("transport: error setting read deadline on %v: %v", ch.conn.RemoteAddr(), err)
 	}
 
+	if err := ch.maybeTruncate(fcall); err != nil {
+		return err
+	}
+
 	p, err := ch.codec.Marshal(fcall)
 	if err != nil {
 		return err
@@ -182,6 +201,86 @@ func (ch *channel) WriteFcall(ctx context.Context, fcall *Fcall) error {
 	}
 
 	return ch.bwr.Flush()
+}
+
+// maybeTruncate will truncate the message to fit into msize on the wire, if
+// possible, or modify the message to ensure the response won't overflow.
+//
+// If the message cannot be truncated, an error will be returned and the
+// message should not be sent.
+//
+// A nil return value means the message can be sent without
+func (ch *channel) maybeTruncate(fcall *Fcall) error {
+
+	// for certain message types, just remove the extra bytes from the data portion.
+	switch msg := fcall.Message.(type) {
+	// TODO(stevvooe): There is one more problematic message type:
+	//
+	// Rread: while we can employ the same truncation fix as Twrite, we
+	// need to make it observable to upstream handlers.
+
+	case MessageTread:
+		// We can rewrite msg.Count so that a return message will be under
+		// msize.  This is more defensive than anything but will ensure that
+		// calls don't fail on sloppy servers.
+
+		// first, craft the shape of the response message
+		resp := newFcall(fcall.Tag, MessageRread{})
+		overflow := uint32(ch.msgmsize(resp)) + msg.Count - uint32(ch.msize)
+
+		if msg.Count < overflow {
+			// Let the bad thing happen; msize too small to even support valid
+			// rewrite. This will result in a Terror from the server-side or
+			// just work.
+			return nil
+		}
+
+		msg.Count -= overflow
+		fcall.Message = msg
+
+		return nil
+	case MessageTwrite:
+		// If we are going to overflow the msize, we need to truncate the write to
+		// appropriate size or throw an error in all other conditions.
+		size := ch.msgmsize(fcall)
+		if size <= ch.msize {
+			return nil
+		}
+
+		// overflow the msize, including the channel message size fields.
+		overflow := size - ch.msize
+
+		if len(msg.Data) < overflow {
+			// paranoid: if msg.Data is not big enough to handle the
+			// overflow, we should get an overflow error. MSize would have
+			// to be way too small to be realistic.
+			return overflowErr{size: overflow}
+		}
+
+		// The truncation is reflected in the return message (Rwrite) by
+		// the server, so we don't need a return value or error condition
+		// to communicate it.
+		msg.Data = msg.Data[:len(msg.Data)-overflow]
+		fcall.Message = msg // since we have a local copy
+
+		return nil
+	default:
+		size := ch.msgmsize(fcall)
+		if size > ch.msize {
+			// overflow the msize, including the channel message size fields.
+			return overflowErr{size: size - ch.msize}
+		}
+
+		return nil
+	}
+
+}
+
+// msgmsize returns the on-wire msize of the Fcall, including the size header.
+// Typically, this can be used to detect whether or not the message overflows
+// the msize buffer.
+func (ch *channel) msgmsize(fcall *Fcall) int {
+	return channelMessageHeaderSize + ch.codec.Size(fcall)
 }
 
 // readmsg reads a 9p message into p from rd, ensuring that all bytes are

@@ -1,6 +1,7 @@
 package p9p
 
 import (
+	"io"
 	"net"
 
 	"context"
@@ -149,7 +150,17 @@ func (c *client) Read(ctx context.Context, fid Fid, p []byte, offset int64) (n i
 		return 0, ErrUnexpectedMsg
 	}
 
-	return copy(p, rread.Data), nil
+	n = copy(p, rread.Data)
+	switch {
+	case len(rread.Data) == 0:
+		err = io.EOF
+	case n < len(p):
+		// TODO(stevvooe): Technically, we should treat this as an io.EOF.
+		// However, we cannot tell if the short read was due to EOF or due to
+		// truncation.
+	}
+
+	return n, err
 }
 
 func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n int, err error) {
@@ -167,7 +178,11 @@ func (c *client) Write(ctx context.Context, fid Fid, p []byte, offset int64) (n 
 		return 0, ErrUnexpectedMsg
 	}
 
-	return int(rwrite.Count), nil
+	if int(rwrite.Count) < len(p) {
+		err = io.ErrShortWrite
+	}
+
+	return int(rwrite.Count), err
 }
 
 func (c *client) Open(ctx context.Context, fid Fid, mode Flag) (Qid, uint32, error) {
