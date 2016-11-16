@@ -31,7 +31,7 @@ func TestEncodeDecode(t *testing.T) {
 			marshaled:   []byte{0x4, 0x0, 0x61, 0x73, 0x64, 0x66},
 		},
 		{
-			description: "[]string",
+			description: "StringSlice",
 			target:      []string{"asdf", "qwer", "zxcv"},
 			marshaled: []byte{
 				0x3, 0x0, // len(target)
@@ -53,7 +53,7 @@ func TestEncodeDecode(t *testing.T) {
 		},
 		// Dir
 		{
-			description: "Tversion fcall",
+			description: "TversionFcall",
 			target: &Fcall{
 				Type: Tversion,
 				Tag:  2255,
@@ -67,7 +67,7 @@ func TestEncodeDecode(t *testing.T) {
 				0x6, 0x0, 0x39, 0x50, 0x54, 0x45, 0x53, 0x54},
 		},
 		{
-			description: "Rversion fcall",
+			description: "RversionFcall",
 			target: &Fcall{
 				Type: Rversion,
 				Tag:  2255,
@@ -81,7 +81,7 @@ func TestEncodeDecode(t *testing.T) {
 				0x6, 0x0, 0x39, 0x50, 0x54, 0x45, 0x53, 0x54},
 		},
 		{
-			description: "Twalk fcall",
+			description: "TwalkFcall",
 			target: &Fcall{
 				Type: Twalk,
 				Tag:  5666,
@@ -99,7 +99,7 @@ func TestEncodeDecode(t *testing.T) {
 				0x1, 0x0, 0x63}, // "c"
 		},
 		{
-			description: "Rwalk call",
+			description: "RwalkFcall",
 			target: &Fcall{
 				Type: Rwalk,
 				Tag:  5556,
@@ -123,7 +123,31 @@ func TestEncodeDecode(t *testing.T) {
 				0x0, 0x58, 0x4, 0x0, 0x0, 0x6a, 0x2b, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
 		},
 		{
-			description: "Rread fcall",
+			description: "EmptyRreadFcall",
+			target: &Fcall{
+				Type:    Rread,
+				Tag:     5556,
+				Message: MessageRread{},
+			},
+			marshaled: []byte{
+				0x75, 0xb4, 0x15,
+				0x0, 0x0, 0x0, 0x0},
+		},
+		{
+			description: "EmptyTwriteFcall",
+			target: &Fcall{
+				Type:    Twrite,
+				Tag:     5556,
+				Message: MessageTwrite{},
+			},
+			marshaled: []byte{
+				byte(Twrite), 0xb4, 0x15,
+				0x0, 0x0, 0x0, 0x0,
+				0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+				0x0, 0x0, 0x0, 0x0},
+		},
+		{
+			description: "RreadFcall",
 			target: &Fcall{
 				Type: Rread,
 				Tag:  5556,
@@ -137,7 +161,7 @@ func TestEncodeDecode(t *testing.T) {
 				0x61, 0x20, 0x6c, 0x6f, 0x74, 0x20, 0x6f, 0x66, 0x20, 0x62, 0x79, 0x74, 0x65, 0x20, 0x64, 0x61, 0x74, 0x61},
 		},
 		{
-			description: "",
+			description: "RstatFcall",
 			target: &Fcall{
 				Type: Rstat,
 				Tag:  5556,
@@ -179,7 +203,7 @@ func TestEncodeDecode(t *testing.T) {
 				0x4, 0x0, 0x6d, 0x75, 0x69, 0x64}, // muid
 		},
 		{
-			description: "Dir[]",
+			description: "DirSlice",
 			target: []Dir{
 				{
 					Type: uint16(0),
@@ -329,7 +353,7 @@ func TestEncodeDecode(t *testing.T) {
 			},
 		},
 		{
-			description: "Rerror fcall",
+			description: "RerrorFcall",
 			target:      newErrorFcall(5556, errors.New("A serious error")),
 			marshaled: []byte{
 				0x6b,       // Rerror
@@ -338,53 +362,48 @@ func TestEncodeDecode(t *testing.T) {
 				0x41, 0x20, 0x73, 0x65, 0x72, 0x69, 0x6f, 0x75, 0x73, 0x20, 0x65, 0x72, 0x72, 0x6f, 0x72},
 		},
 	} {
-		t.Logf("target under test: %#v %T", testcase.target, testcase.target)
-		fatalf := func(format string, args ...interface{}) {
-			t.Fatalf(testcase.description+": "+format, args...)
-		}
 
-		p, err := codec.Marshal(testcase.target)
-		if err != nil {
-			fatalf("error writing fcall: %v", err)
-		}
+		t.Run(testcase.description, func(t *testing.T) {
+			p, err := codec.Marshal(testcase.target)
+			if err != nil {
+				t.Fatalf("error writing fcall: %v", err)
+			}
 
-		if !bytes.Equal(p, testcase.marshaled) {
-			fatalf("unexpected bytes for fcall: \n%#v != \n%#v", p, testcase.marshaled)
-		}
+			if !bytes.Equal(p, testcase.marshaled) {
+				t.Fatalf("unexpected bytes for fcall: \n%#v != \n%#v", p, testcase.marshaled)
+			}
 
-		if size9p(testcase.target) == 0 {
-			fatalf("size of target should never be zero")
-		}
+			if size9p(testcase.target) == 0 {
+				t.Fatalf("size of target should never be zero")
+			}
 
-		// check that size9p is working correctly
-		if int(size9p(testcase.target)) != len(testcase.marshaled) {
-			fatalf("size not correct: %v != %v", int(size9p(testcase.target)), len(testcase.marshaled))
-		}
+			// check that size9p is working correctly
+			if int(size9p(testcase.target)) != len(testcase.marshaled) {
+				t.Fatalf("size not correct: %v != %v", int(size9p(testcase.target)), len(testcase.marshaled))
+			}
 
-		var v interface{}
-		targetType := reflect.TypeOf(testcase.target)
+			var v interface{}
+			targetType := reflect.TypeOf(testcase.target)
 
-		if targetType.Kind() == reflect.Ptr {
-			v = reflect.New(targetType.Elem()).Interface()
-		} else {
-			v = reflect.New(targetType).Interface()
-		}
+			if targetType.Kind() == reflect.Ptr {
+				v = reflect.New(targetType.Elem()).Interface()
+			} else {
+				v = reflect.New(targetType).Interface()
+			}
 
-		if err := codec.Unmarshal(p, v); err != nil {
-			fatalf("error reading: %v", err)
-		}
+			if err := codec.Unmarshal(p, v); err != nil {
+				t.Fatalf("error reading: %v", err)
+			}
 
-		if targetType.Kind() != reflect.Ptr {
-			v = reflect.Indirect(reflect.ValueOf(v)).Interface()
-		}
+			if targetType.Kind() != reflect.Ptr {
+				v = reflect.Indirect(reflect.ValueOf(v)).Interface()
+			}
 
-		if !reflect.DeepEqual(v, testcase.target) {
-			fatalf("not equal: %v != %v (\n%#v\n%#v\n)",
-				v, testcase.target,
-				v, testcase.target)
-		}
-
-		t.Logf("%#v", v)
-
+			if !reflect.DeepEqual(v, testcase.target) {
+				t.Fatalf("not equal: %v != %v (\n%#v\n%#v\n)",
+					v, testcase.target,
+					v, testcase.target)
+			}
+		})
 	}
 }

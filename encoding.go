@@ -251,7 +251,9 @@ func (d *decoder) decode(vs ...interface{}) error {
 				return err
 			}
 
-			*v = make([]byte, int(ll))
+			if ll > 0 {
+				*v = make([]byte, int(ll))
+			}
 
 			if err := binary.Read(d.rd, binary.LittleEndian, v); err != nil {
 				return err
