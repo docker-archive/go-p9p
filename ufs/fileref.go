@@ -18,7 +18,10 @@ type FileRef struct {
 func (f *FileRef) Stat() error {
 	f.Lock()
 	defer f.Unlock()
+	return f.statLocked()
+}
 
+func (f *FileRef) statLocked() error {
 	info, err := os.Lstat(f.Path)
 	if err != nil {
 		return err

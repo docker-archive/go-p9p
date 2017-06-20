@@ -260,7 +260,7 @@ func (sess *session) Create(ctx context.Context, parent p9p.Fid, name string, pe
 	defer ref.Unlock()
 	ref.Path = newpath
 	ref.File = file
-	if err := ref.Stat(); err != nil {
+	if err := ref.statLocked(); err != nil {
 		return p9p.Qid{}, 0, err
 	}
 	return ref.Info.Qid, 0, err
