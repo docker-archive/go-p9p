@@ -79,7 +79,6 @@ func (c *conn) serve() error {
 	go c.read(requests)
 	go c.write(responses)
 
-	log.Println("server.run()")
 	for {
 		select {
 		case req := <-requests:
@@ -97,8 +96,6 @@ func (c *conn) serve() error {
 
 			switch msg := req.Message.(type) {
 			case MessageTflush:
-				log.Println("server: flushing message", msg.Oldtag)
-
 				var resp *Fcall
 				// check if we have actually know about the requested flush
 				active, ok := tags[msg.Oldtag]
@@ -167,7 +164,6 @@ func (c *conn) serve() error {
 				// the context was canceled for some reason, perhaps timeout or
 				// due to a flush call. We treat this as a condition where a
 				// response should not be sent.
-				log.Println("canceled", resp, active.ctx.Err())
 			}
 			delete(tags, resp.Tag)
 		case <-c.ctx.Done():
@@ -222,7 +218,7 @@ func (c *conn) write(responses chan *Fcall) {
 						// TODO(stevvooe): A full idle timeout on the
 						// connection should be enforced here. We log here,
 						// since this is less common.
-						log.Printf("9p server: temporary error writing fcall: %v", err)
+						log.Printf("p9p: temporary error writing fcall: %v", err)
 						continue
 					}
 				}
