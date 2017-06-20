@@ -31,7 +31,7 @@ func (sess *session) getRef(fid p9p.Fid) (*FileRef, error) {
 	sess.Lock()
 	defer sess.Unlock()
 
-	if fid == 0 {
+	if fid == p9p.NOFID {
 		return nil, p9p.ErrUnknownfid
 	}
 
@@ -51,7 +51,7 @@ func (sess *session) newRef(fid p9p.Fid, path string) (*FileRef, error) {
 	sess.Lock()
 	defer sess.Unlock()
 
-	if fid == 0 {
+	if fid == p9p.NOFID {
 		return nil, p9p.ErrUnknownfid
 	}
 
