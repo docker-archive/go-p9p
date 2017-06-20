@@ -82,9 +82,9 @@ func (rd *Readdir) Read(ctx context.Context, p []byte, offset int64) (n int, err
 	}
 
 done:
-	if err == io.EOF && len(p) > 0 {
-		// Don't let io.EOF escape if we've written to p. 9p doesn't handle
-		// this like Go.
+	if err == io.EOF {
+		// Don't let io.EOF escape. EOF is indicated by a zero-length result
+		// with no error.
 		err = nil
 	}
 
