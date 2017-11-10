@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"reflect"
 	"strings"
 	"time"
@@ -330,9 +329,7 @@ func (d *decoder) decode(vs ...interface{}) error {
 
 			b := make([]byte, ll)
 			// must consume entire dir entry.
-			n, err := io.ReadFull(d.rd, b)
-			if err != nil {
-				log.Println("dir readfull failed:", err, ll, n)
+			if _, err := io.ReadFull(d.rd, b); err != nil {
 				return err
 			}
 
