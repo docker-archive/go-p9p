@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/docker/go-p9p"
+	"github.com/docker/go-p9p/ufs"
 	"golang.org/x/net/context"
 )
 
@@ -49,7 +50,7 @@ func main() {
 
 			ctx := context.WithValue(ctx, "conn", conn)
 			log.Println("connected", conn.RemoteAddr())
-			session, err := newLocalSession(ctx, root)
+			session, err := ufs.NewSession(ctx, root)
 			if err != nil {
 				log.Println("error creating session")
 				return
@@ -60,22 +61,4 @@ func main() {
 			}
 		}(c)
 	}
-}
-
-// newLocalSession returns a session to serve the local filesystem, restricted
-// to the provided root.
-func newLocalSession(ctx context.Context, root string) (p9p.Session, error) {
-	// silly, just connect to ufs for now! replace this with real code later!
-	log.Println("dialing", ":5640", "for", ctx.Value("conn"))
-	conn, err := net.Dial("tcp", ":5640")
-	if err != nil {
-		return nil, err
-	}
-
-	session, err := p9p.NewSession(ctx, conn)
-	if err != nil {
-		return nil, err
-	}
-
-	return session, nil
 }
