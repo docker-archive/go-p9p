@@ -5,6 +5,8 @@ A modern, performant 9P library for Go.
 
 For information on usage, please see the [GoDoc](https://godoc.org/github.com/docker/go-p9p).
 
+Refer to [9P's documentation](http://9p.cat-v.org/documentation) for more details on the protocol.
+
 ## Copyright and license
 
 Copyright © 2015 Docker, Inc. go-p9p is licensed under the Apache License,
