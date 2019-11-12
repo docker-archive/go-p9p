@@ -6,7 +6,7 @@ idiomatic Go style.
 
 The package revolves around the session type, which is an enumeration of raw
 9p message calls. A few calls, such as flush and version, have been elided,
-defering their usage to the server implementation. Sessions can be trivially
+deferring their usage to the server implementation. Sessions can be trivially
 proxied through clients and servers.
 
 Getting Started
